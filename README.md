@@ -13,7 +13,7 @@
 
 已有工作区时，给 Agent 一句话即可：
 
-> 阅读 AGENTS.md，检查本地与远程状态，接着完成我的任务；结束前主动提交、推送并更新合并请求，告诉我本地试玩地址和同步结果。
+> 阅读 AGENTS.md，检查本地与远程状态，接着完成我的任务；每次收到请求先同步队友最新进展；结束前主动提交、推送并在检查通过后合并本任务 PR，告诉我本地试玩地址和同步结果。
 
 ## 当前可以运行什么
 
@@ -37,7 +37,7 @@ npm run check
 
 ## 怎么一起做
 
-每项任务一个分支，Agent 主动提交和推送，通过 Pull Request（PR，合并请求）汇合。`main` 保存大家共同使用的版本，由负责人验收合入。详细操作见 [docs/COLLABORATION.md](docs/COLLABORATION.md)。
+每项任务一个分支，Agent 主动提交和推送，通过 Pull Request（PR，合并请求）汇合。`main` 保存大家共同使用的版本，由三名成员的 Agent 在相关检查通过后主动 squash 合入，无需人工审批。详细操作见 [docs/COLLABORATION.md](docs/COLLABORATION.md)。
 
 创意先提交到 [Issues](https://github.com/Gavin8233841/tianchi-html-game-lab/issues)，大家选定一个方向后，先做能试玩的核心循环，再分工扩展。无需三个人同时搭建基础工程。
 
