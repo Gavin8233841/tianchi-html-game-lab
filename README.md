@@ -41,6 +41,8 @@ npm run check
 
 创意先提交到 [Issues](https://github.com/Gavin8233841/tianchi-html-game-lab/issues)，大家选定一个方向后，先做能试玩的核心循环，再分工扩展。无需三个人同时搭建基础工程。
 
+[团队动态 #3](https://github.com/Gavin8233841/tianchi-html-game-lab/issues/3) 按需共享简短进展，不派工、不催办、无需回复，也不阻塞开发；各自 Agent 的一次启用指令见 [docs/TEAM-FEED.md](docs/TEAM-FEED.md)。
+
 | 文件 / 目录 | 用途 |
 | --- | --- |
 | `AGENTS.md` | 所有开发 Agent 共用的规则 |
