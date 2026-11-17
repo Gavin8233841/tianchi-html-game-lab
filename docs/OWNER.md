@@ -37,7 +37,7 @@ https://github.com/Gavin8233841/tianchi-html-game-lab/settings/access
 ## 当前仓库设置与边界
 
 - 公开；Issues 和 PR 可用；不启用 Wiki、正式部署或付费服务。
-- 计划设置 main 需要 PR 与基础检查，禁止强推/删 main，允许 squash 合并。初始化后的实际设置可在仓库 Settings → Branches 核对；**以 GitHub 当前设置为准**。
+- 初始化配置：main 需要 PR 与 `Workspace check` 通过，并与最新 main 同步；禁止强推/删 main，允许 squash 合并。负责人保留管理员应急处理能力。实际设置可在仓库 Settings → Branches 核对；**以 GitHub 当前设置为准**。
 - 不要求固定数量的审批，避免三人互相等待。规范仍要求由负责人决定合入。负责人可在必要时处理仓库设置，不把日常小修变成复杂审批。
 - CI 的绿色只表示当前工具检查通过；游戏还未实现，玩法、审美和手感需要之后实际试玩。
 - 没有启用自动合并、后台自动同步、Pages 或外部部署。需要时另行安排。
