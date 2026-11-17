@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.local/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.qoder/*
+!.qoder/rules/
+!.qoder/rules/**
+playwright-report/
+test-results/
