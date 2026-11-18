@@ -1,10 +1,10 @@
-import { bake, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
+import { bake, neon, fitCanvasHD, pourGlass } from '../engine/sprites.js';
 import { easeOutBack } from '../engine/fx.js';
 import { sanitizeWarehouse } from '../core/warehouse.js';
 import { WISH_BY_ID, SYMBOL_LABEL } from '../core/charades.js';
 
-const LOGICAL_W = 160;
-const LOGICAL_H = 128;
+const LOGICAL_W = 320;
+const LOGICAL_H = 240;
 const STAMP_AT = 0.35;
 const STAMP_TIME = 0.3;
 const LINE_AT = 0.6;
@@ -20,6 +20,7 @@ let stampAge = null;
 let fulfilled = false;
 let completion = 0;
 let tier = 'discount';
+let viewScale = 1;
 let resizeHandler = null;
 let used = false;
 
@@ -27,22 +28,22 @@ function drawStamp(g, text, color) {
   const p = Math.min(1, stampAge / STAMP_TIME);
   const k = 3 - 2 * easeOutBack(p);
   g.save();
-  g.translate(80, 66);
+  g.translate(160, 132);
   g.rotate(-0.18);
   g.scale(k, k);
   g.globalAlpha = Math.min(1, p * 2.5);
   g.fillStyle = 'rgba(22,18,31,0.88)';
-  g.fillRect(-34, -14, 68, 28);
+  g.fillRect(-68, -28, 136, 56);
   g.strokeStyle = color;
+  g.lineWidth = 4;
+  g.strokeRect(-68, -28, 136, 56);
   g.lineWidth = 2;
-  g.strokeRect(-34, -14, 68, 28);
-  g.lineWidth = 1;
-  g.strokeRect(-30, -10, 60, 20);
-  g.font = 'bold 13px monospace';
+  g.strokeRect(-60, -20, 120, 40);
+  g.font = 'bold 26px monospace';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = color;
-  g.fillText(text, 0, 1);
+  g.fillText(text, 0, 2);
   g.restore();
   g.globalAlpha = 1;
 }
@@ -70,8 +71,8 @@ export const result = {
     tier = s.tier;
 
     ctx.canvas.style.display = 'block';
-    fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
-    resizeHandler = () => fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
+    viewScale = fitCanvasHD(ctx, LOGICAL_W, LOGICAL_H);
+    resizeHandler = () => { viewScale = fitCanvasHD(ctx, LOGICAL_W, LOGICAL_H); };
     window.addEventListener('resize', resizeHandler);
 
     // 余料酒直接成为仓库新值（酒吧台已算好消耗）；banked 防刷新重复入库
@@ -129,11 +130,11 @@ export const result = {
         ctx.fx.addTrauma(0.3);
         for (let k = 0; k < CONFETTI_BURSTS; k++) {
           ctx.scheduler.after(k * 0.12, () => {
-            ctx.particles.confetti(20 + Math.random() * 120, 8 + Math.random() * 24);
+            ctx.particles.confetti(40 + Math.random() * 240, 16 + Math.random() * 48);
           });
         }
         for (let k = 0; k < 5; k++) {
-          ctx.scheduler.after(0.2 + k * 0.25, () => ctx.particles.stardust(80, 46));
+          ctx.scheduler.after(0.2 + k * 0.25, () => ctx.particles.stardust(160, 92));
         }
       }
     });
@@ -153,19 +154,20 @@ export const result = {
   },
   render(ctx) {
     const g = ctx.g;
+    g.setTransform(viewScale, 0, 0, viewScale, 0, 0);
     g.imageSmoothingEnabled = false;
     g.fillStyle = '#16121f';
     g.fillRect(-8, -8, LOGICAL_W + 16, LOGICAL_H + 16);
 
     const color = fulfilled ? '#f2c14e' : tier === 'weird' ? '#8b81a8' : '#ef5da8';
-    const title = neon(TIER_TITLE[tier], color, 14);
+    const title = neon(TIER_TITLE[tier], color, 28, viewScale);
     let glow = fulfilled ? 0.7 + 0.3 * Math.sin(t * 9) : 0.9;
     if (fulfilled && Math.sin(t * 17) > 0.96) glow = 0.3;
     g.globalAlpha = glow;
-    g.drawImage(title, Math.floor((LOGICAL_W - title.width) / 2), 2);
+    g.drawImage(title, (LOGICAL_W - title.width / viewScale) / 2, 4, title.width / viewScale, title.height / viewScale);
     g.globalAlpha = 1;
 
-    pourGlass(g, 56, 44, 3, completion);
+    pourGlass(g, 112, 88, 6, completion);
 
     if (stampAge !== null) {
       drawStamp(g, TIER_STAMP[tier], color);
