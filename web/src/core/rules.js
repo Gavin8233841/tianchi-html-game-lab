@@ -180,16 +180,15 @@ function applyProbe(state, index) {
     cells[index] = { ...cell, probed: true };
     next = { ...next, board: { ...board, cells } };
     effects.push({ type: 'probe', index, kind: 'event', event: cell.event });
+  } else if (cell.content) {
+    // v6：认出原料种类但不收集：probed，revealed 仍 false，挖开才收集
+    cells[index] = { ...cell, probed: true };
+    next = { ...next, board: { ...board, cells } };
+    effects.push({ type: 'probe', index, kind: 'resource', resource: cell.content.type, amount: cell.content.amount });
   } else {
-    // 安全格/原料/出口：单格翻开（不连锁）+拾取+出口判定
+    // 纯安全格/出口：单格翻开（不连锁）+出口判定
     cells[index] = { ...cell, revealed: true, probed: true };
     effects.push({ type: 'probe', index, kind: 'safe' });
-    if (cell.content && !cell.picked) {
-      cells[index] = { ...cells[index], picked: true };
-      const carried = { ...next.carried, [cell.content.type]: next.carried[cell.content.type] + cell.content.amount };
-      next = { ...next, carried };
-      effects.push({ type: 'pickup', index, resource: cell.content.type, amount: cell.content.amount });
-    }
     next = { ...next, board: { ...board, cells } };
     if (index === board.exit) {
       const { next: deposited, effect } = deposit(next);

@@ -42,7 +42,7 @@ function chebyshev(a, b, width) {
 function analyze(state) {
   const { width, height, cells } = state.board;
   const identified = new Set();
-  cells.forEach((c, i) => { if (c.known || (c.probed && c.event)) identified.add(i); });
+  cells.forEach((c, i) => { if (c.known || (c.probed && (c.event || c.content))) identified.add(i); });
   const special = new Set(identified);
   const safe = new Set();
   let changed = true;
@@ -77,7 +77,7 @@ function analyze(state) {
     if (!cells[i].revealed && !identified.has(i)) candidates.push(i);
   }
   const cfg = CONFIG.floors[state.floor];
-  const remainingSpecials = cfg.mines + cfg.eventCount - identified.size;
+  const remainingSpecials = cfg.mines + cfg.eventCount + cfg.water.length + cfg.stardust.length - identified.size;
   const globalP = candidates.length > 0 ? Math.max(0, remainingSpecials) / candidates.length : 0;
   const suspects = candidates.filter((i) => special.has(i));
   return { identified, special, safe, suspects, constraints, candidates, globalP };
@@ -101,10 +101,18 @@ const FAR_BIAS = !argv.includes('--no-far-bias');
 function chooseDeduction(state, rng, firstIndex) {
   const { width, height, cells } = state.board;
   const { safe, suspects, constraints, candidates, globalP } = analyze(state);
-  // v5：已揭示未收集的原料 → 免费拾取（优先攒料）
+  // v6：已认出的原料（probed 未挖）或已揭示未拾取 → 优先挖/收（原料是目标）
   const loot = [];
-  cells.forEach((c, i) => { if (c.revealed && c.content && !c.picked) loot.push(i); });
+  cells.forEach((c, i) => {
+    if ((c.revealed && c.content && !c.picked) || (c.probed && c.content && !c.revealed)) loot.push(i);
+  });
   if (loot.length > 0) return { action: 'scan', index: pickRandom(loot, rng), guess: false };
+  // v6：缺原料时敢挖嫌疑特殊格（原料占多数=回报，雷=风险），体现「明知有雷忍不住挖」
+  const needWater = state.floor === 1 && (state.carried.water + state.stored.water) < CONFIG.recipe.water;
+  const needDust = state.floor === 2 && (state.carried.stardust + state.stored.stardust) < CONFIG.recipe.stardust;
+  if ((needWater || needDust) && suspects.length > 0 && state.stamina > PROBE_RESERVE) {
+    return { action: 'scan', index: pickRandom(suspects, rng), guess: true };
+  }
   const low = state.stamina <= LOW_STAMINA;
   const cut = farCutoff(width, height, firstIndex);
   const isFar = (i) => chebyshev(i, firstIndex, width) >= cut;
