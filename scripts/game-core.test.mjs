@@ -9,8 +9,8 @@ import { completion, discountedPrice } from '../web/src/core/recipe.js';
 import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
 import { EMPTY_WAREHOUSE, sanitizeWarehouse } from '../web/src/core/warehouse.js';
 import {
-  SYMBOL_IDS, CHARADE_WISHES, WISH_BY_ID, directionScore, interpret, moodFor,
-  startBar, applyBarAction, availableMaterials, MATCH_CAP,
+  SYMBOLS, SYMBOL_IDS, CHARADE_WISHES, WISH_BY_ID, directionScore, interpret, moodFor,
+  reactionNotes, reactionLines, startBar, applyBarAction, availableMaterials, MATCH_CAP,
 } from '../web/src/core/charades.js';
 
 const SEED = 20261118;
@@ -1142,4 +1142,27 @@ test('㊳ provenance：离层存款按层记账，L1/L2 分别累计（材料点
   assert.ok(run.provenance[2].stardust >= 1);
   const back = deserialize(serialize({ scene: 'extract', run }));
   assert.deepEqual(back.run.provenance, run.provenance);
+});
+test('㊴ 明确标准：符号含义/愿望提示齐全，reactionNotes 陷阱点名+缺核心诊断', () => {
+  for (const s of SYMBOLS) {
+    assert.ok(s.mean && s.mean.length > 0, `${s.id} 缺含义`);
+  }
+  for (const w of CHARADE_WISHES) {
+    assert.ok(w.hint && w.hint.length > 0, `${w.id} 缺提示句`);
+    assert.equal(w.core.length, 2);
+  }
+  const trap = reactionNotes('home', ['house', 'heart']);
+  assert.deepEqual(trap.trapLabels, ['心']);
+  assert.equal(trap.missingCore, true);
+  const miss = reactionNotes('home', ['house']);
+  assert.deepEqual(miss.trapLabels, []);
+  assert.equal(miss.missingCore, true);
+  const good = reactionNotes('home', ['house', 'road', 'moon']);
+  assert.deepEqual(good.trapLabels, []);
+  assert.equal(good.missingCore, false);
+  const lines = reactionLines('home', ['house', 'heart']);
+  assert.equal(lines.length, 2);
+  assert.ok(lines[0].includes('心'));
+  assert.ok(lines[1].includes('最重要'));
+  assert.deepEqual(reactionLines('home', ['house', 'road']), []);
 });

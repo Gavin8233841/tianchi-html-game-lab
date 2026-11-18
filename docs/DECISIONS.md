@@ -100,3 +100,12 @@
 - 吧台改 320×240 逻辑空间：卡牌 40×52、图标 2x、文字≥10px；统一间距与层级（左上愿望/耐心/轮次，右上计时环+材料条）；空摆牌区画虚线槽位（ affordance）；hover 抬升+亮边+pointer 光标；摆牌/收回 easeOutBack pop 动画；调酒倒注点右移避开调酒师脸。结算页同步 HD（酒杯6x、印章26px、霓虹28px、粒子坐标×2）。
 - 品牌不变：沿用现有色板/像素 sprite/DOM 组件（event-card/glass-btn），只重做光栅化与布局，符合 frontend-craft「扩展现有设计系统」原则。
 - 验证：2x 显示倍率下全流程截图 docs/evidence/charades-bar/v9-*.png（place/hover/pop/react/mix/result），文字卡牌动画均清晰；41 单测保持绿；离线包重建+Desktop 副本更新。
+
+## 2026-11-19：v10 比划明确标准（用户「很难调到我想要的酒，没有明确标准」）
+
+- 问题：隐藏匹配度+纯直译反应=无可学习标准，推理变抽奖。修法=三层明线索，把「蒙」变「翻译」，数字仍隐藏（保留99%哲学）：
+  ①符号含义表：吧台可展开 details 字典，8 符号各 3 义（水=洗涤/眼泪、门=送别/新开始、心=爱情/执念…），愿望可据此译成符号组合；
+  ②愿望提示句：每愿望一句诗意指向核心（想家=「路的尽头，有一间房子。」），不报符号名但可读解；
+  ③反应诊断 reactionNotes/reactionLines：陷阱牌点名警告（「它指着『心』：这个让我想到别的东西……你确定？」）、缺核心明说（「最重要的东西还没摆上来」），每轮可操作反馈。
+- 数据：SYMBOLS.mean、CHARADE_WISHES.hint；纯函数 reactionNotes/reactionLines 入 core；bar.js 渲染字典/提示/诊断；main.css 加 .sym-dict/.wish-hint（沿用色板）。
+- 42 单测绿（新增㊴）；浏览器实测 place 字典+提示、react 陷阱警告+缺核心诊断全文验证；截图 v10-bar-place/react.png；离线包+Desktop 更新。

@@ -1,7 +1,7 @@
 import { applyAction } from '../core/rules.js';
 import {
-  applyBarAction, startBar, availableMaterials, SYMBOL_LABEL, WISH_BY_ID,
-  PLACE_PER_ROUND, REVEAL_COST,
+  applyBarAction, startBar, availableMaterials, SYMBOLS, SYMBOL_LABEL, WISH_BY_ID,
+  reactionLines, PLACE_PER_ROUND, REVEAL_COST,
 } from '../core/charades.js';
 import { CONFIG } from '../core/config.js';
 import { sanitizeWarehouse } from '../core/warehouse.js';
@@ -187,6 +187,18 @@ function renderPhase(ctx) {
     hint.className = 'hint';
     hint.textContent = `点手牌摆上吧台（每回合至多 ${PLACE_PER_ROUND} 张），点吧台上的牌收回。暗牌花 ${REVEAL_COST}g 星尘显影。${PLACE_TIME} 秒后自动摆好。`;
     phaseWrap.append(hint);
+    const dict = document.createElement('details');
+    dict.className = 'sym-dict';
+    const sum = document.createElement('summary');
+    sum.textContent = '符号含义表（调酒师的外星字典）';
+    dict.append(sum);
+    for (const s of SYMBOLS) {
+      const line = document.createElement('p');
+      line.className = 'hint';
+      line.textContent = `${s.label} —— ${s.mean}`;
+      dict.append(line);
+    }
+    phaseWrap.append(dict);
     const hiddenIdx = bar.hand.findIndex((c) => c.hidden);
     const reveal = button(`显影暗牌（${REVEAL_COST}g 星尘）`, false, () => act(ctx, { type: 'reveal' }));
     reveal.disabled = hiddenIdx < 0 || avail.stardust < REVEAL_COST;
@@ -212,6 +224,12 @@ function renderPhase(ctx) {
     mood.className = 'event-card-deltas';
     mood.textContent = it.mood === 'excited' ? '它三只眼一起亮了！' : it.mood === 'thinking' ? '它歪着头，好像在想……' : '它看起来一脸困惑……';
     body.append(name, desc, mood);
+    for (const line of reactionLines(ctx.run.wish, bar.tableau)) {
+      const note = document.createElement('div');
+      note.className = 'event-card-desc';
+      note.textContent = line;
+      body.append(note);
+    }
     card.append(body);
     phaseWrap.append(card);
     const drink = button('就这杯，我喝了', true, () => act(ctx, { type: 'drink' }));
@@ -332,8 +350,11 @@ export const bar = {
     wishLine.className = 'hint';
     const wish = WISH_BY_ID[run.wish];
     wishLine.textContent = `你的愿望卡：「${wish.label}」——${wish.desc}。它看不见，只能靠你比划。`;
+    const hintLine = document.createElement('p');
+    hintLine.className = 'hint wish-hint';
+    hintLine.textContent = `愿望提示：「${wish.hint}」——照着这句，从字典里译成符号。`;
     phaseWrap = document.createElement('div');
-    ctx.panel.append(title, story, wishLine, phaseWrap);
+    ctx.panel.append(title, story, wishLine, hintLine, phaseWrap);
     renderPhase(ctx);
     if (run.bar.phase === 'place') startPlaceTimer(ctx);
   },

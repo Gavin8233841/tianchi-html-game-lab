@@ -6,14 +6,14 @@ import { mulberry32, shuffle } from './rng.js';
 // 匹配度 = 方向分(符号) × 材料纯度(扫雷+仓库)，封顶 99——没有一杯酒能百分之百解决愿望。
 
 export const SYMBOLS = [
-  { id: 'star', label: '星' },
-  { id: 'house', label: '家' },
-  { id: 'heart', label: '心' },
-  { id: 'road', label: '路' },
-  { id: 'fire', label: '火' },
-  { id: 'water', label: '水' },
-  { id: 'moon', label: '月' },
-  { id: 'door', label: '门' },
+  { id: 'star', label: '星', mean: '恒星 / 点燃 / 许愿' },
+  { id: 'house', label: '家', mean: '房屋 / 建筑 / 旧回忆' },
+  { id: 'heart', label: '心', mean: '心脏 / 爱情 / 执念' },
+  { id: 'road', label: '路', mean: '道路 / 旅程 / 归途' },
+  { id: 'fire', label: '火', mean: '火焰 / 热情 / 勇气' },
+  { id: 'water', label: '水', mean: '水 / 洗涤 / 眼泪' },
+  { id: 'moon', label: '月', mean: '月亮 / 夜晚 / 思念' },
+  { id: 'door', label: '门', mean: '门 / 送别 / 新开始' },
 ];
 export const SYMBOL_IDS = SYMBOLS.map((s) => s.id);
 export const SYMBOL_LABEL = Object.fromEntries(SYMBOLS.map((s) => [s.id, s.label]));
@@ -21,30 +21,35 @@ export const SYMBOL_LABEL = Object.fromEntries(SYMBOLS.map((s) => [s.id, s.label
 export const CHARADE_WISHES = [
   {
     id: 'home', label: '想家', desc: '想念一个叫家的地方',
+    hint: '路的尽头，有一间房子。',
     core: ['house', 'road'], bonus: ['moon', 'star'], trap: ['heart', 'water'],
     done: '酒液里浮着一栋小房子，门前星路蜿蜒。你听见了开门声。',
     half: '房子有点模糊，但那条路你认得。',
   },
   {
     id: 'brave', label: '想勇敢', desc: '明天那件事，想敢去做',
+    hint: '把心点燃。',
     core: ['fire', 'heart'], bonus: ['star'], trap: ['water', 'moon'],
     done: '一口下去，胸口像点起了一堆火。明天你敢了。',
     half: '火苗有了，还差一阵风。',
   },
   {
     id: 'forget', label: '想忘掉一个人', desc: '把那个名字冲淡一点',
+    hint: '洗干净，然后送出门。',
     core: ['water', 'door'], bonus: ['moon'], trap: ['heart', 'house'],
     done: '那扇门关上了，水声把名字冲得很淡很淡。',
     half: '名字还在，只是笔画淡了。',
   },
   {
     id: 'dream', label: '想做个好梦', desc: '今晚想去软绵绵的地方',
+    hint: '月光和星光，软软的夜。',
     core: ['moon', 'star'], bonus: ['water'], trap: ['fire', 'house'],
     done: '今晚的梦里会有星星，软的，能踩上去。',
     half: '梦有了，星星还在路上。',
   },
   {
     id: 'restart', label: '想重新开始', desc: '想走一条没走过的路',
+    hint: '推开新门，走没走过的路。',
     core: ['door', 'road'], bonus: ['star'], trap: ['house', 'heart'],
     done: '门后是一条没走过的路。这次往哪走，你说了算。',
     half: '门开了条缝，路还看不全。',
@@ -128,6 +133,28 @@ export function moodFor(direction) {
   if (direction >= FULFILL_AT) return 'excited';
   if (direction >= 50) return 'thinking';
   return 'confused';
+}
+
+// 反应诊断：把「差在哪」说成可操作的人话（陷阱点名警告 / 缺核心明说），不报数字。
+export function reactionNotes(wishId, tableau) {
+  const wish = WISH_BY_ID[wishId];
+  if (!wish) return { trapLabels: [], missingCore: false };
+  const set = new Set(tableau);
+  const trapLabels = wish.trap.filter((s) => set.has(s)).map((s) => SYMBOL_LABEL[s]);
+  const missingCore = wish.core.some((s) => !set.has(s));
+  return { trapLabels, missingCore };
+}
+
+export function reactionLines(wishId, tableau) {
+  const { trapLabels, missingCore } = reactionNotes(wishId, tableau);
+  const lines = [];
+  if (trapLabels.length > 0) {
+    lines.push(`它指着「${trapLabels.join('、')}」犹豫了一下："这个让我想到别的东西……你确定要放？"`);
+  }
+  if (missingCore) {
+    lines.push('它歪着头："好像还缺了点什么……最重要的东西，还没摆上来。"');
+  }
+  return lines;
 }
 
 export function interpret(wishId, tableau) {
