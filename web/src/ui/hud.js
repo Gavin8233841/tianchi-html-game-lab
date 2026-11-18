@@ -1,8 +1,8 @@
 import { CONFIG } from '../core/config.js';
 
-function chip(text) {
+function chip(text, kind) {
   const el = document.createElement('span');
-  el.className = 'hud-chip';
+  el.className = kind ? `hud-chip ${kind}` : 'hud-chip';
   el.textContent = text;
   return el;
 }
@@ -49,6 +49,9 @@ export function createHud(root) {
         shield.append(pip);
       }
       stats.append(chip(`层数 L${run.floor}`), chip(`体力 ${run.stamina}`), shield);
+      if (run.interference && run.interference.remaining > 0) {
+        stats.append(chip(`静电干扰 ×${run.interference.remaining}（扫描+${run.interference.extra}体力）`, 'jam'));
+      }
 
       const bars = document.createElement('div');
       bars.className = 'hud-line hud-bars';

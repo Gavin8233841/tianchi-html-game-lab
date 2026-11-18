@@ -1,5 +1,7 @@
 import { CONFIG } from './config.js';
 import { generateBoard, revealChain } from './board.js';
+import { mulberry32 } from './rng.js';
+import { applyEvent } from './events.js';
 import { settleRecipe } from './recipe.js';
 
 const EMPTY = () => ({ water: 0, stardust: 0 });
@@ -14,6 +16,7 @@ export function createRun({ wish, seed }) {
     shield: CONFIG.shield.initial,
     carried: EMPTY(),
     stored: EMPTY(),
+    interference: null,
     board: { width: floor.width, height: floor.height, cells: null, exit: -1 },
     status: 'diving',
     settlement: null,
@@ -36,6 +39,18 @@ function deposit(state) {
   };
 }
 
+function pushEventEffects(effects, id, index, delta, allRevealed) {
+  if (!delta) return;
+  effects.push({ type: 'event', id, index, delta });
+  if (delta.reveals && delta.reveals.length > 0) {
+    effects.push({ type: 'reveals', indices: delta.reveals });
+    allRevealed.push(...delta.reveals);
+  }
+  for (const p of delta.pickups || []) effects.push({ type: 'pickup', index: p.index, resource: p.resource, amount: p.amount });
+  if (delta.marks && delta.marks.length > 0) effects.push({ type: 'mine-mark', indices: delta.marks });
+  for (const sub of delta.events || []) pushEventEffects(effects, sub.id, sub.index, sub.delta, allRevealed);
+}
+
 function applyScan(state, index) {
   if (state.status !== 'diving') return rejected(state, 'not-diving');
   if (state.stamina <= 0) return rejected(state, 'no-stamina');
@@ -52,9 +67,13 @@ function applyScan(state, index) {
   const cell = board.cells[index];
   if (cell.revealed || cell.known) return rejected(state, 'already-open');
 
-  let next = { ...state, board, rngState, stamina: state.stamina - 1 };
+  const active = state.interference && state.interference.remaining > 0 ? state.interference : null;
+  const cost = 1 + (active ? active.extra : 0);
+  let interference = null;
+  if (active && active.remaining - 1 > 0) interference = { extra: active.extra, remaining: active.remaining - 1 };
+  let next = { ...state, board, rngState, stamina: Math.max(0, state.stamina - cost), interference };
   const effects = [];
-  const cells = board.cells.slice();
+  let cells = board.cells.slice();
 
   if (cell.mine) {
     cells[index] = { ...cell, revealed: true, known: true };
@@ -80,7 +99,19 @@ function applyScan(state, index) {
       }
     }
     next = { ...next, board: { ...board, cells } };
-    if (chain.includes(board.exit)) {
+    const allRevealed = [...chain];
+    for (const i of chain) {
+      const c = next.board.cells[i];
+      if (!c.event) continue;
+      const rng = mulberry32(rngState);
+      const result = applyEvent(next, c.event, rng, i);
+      next = result.run;
+      rngState = rng.getState();
+      cells = next.board.cells;
+      pushEventEffects(effects, c.event, i, result.delta, allRevealed);
+    }
+    next = { ...next, board: { ...next.board, cells }, rngState };
+    if (allRevealed.includes(board.exit)) {
       const { next: deposited, effect } = deposit(next);
       next = { ...deposited, status: 'extract-ready' };
       effects.push({ type: 'exit', index: board.exit }, effect);

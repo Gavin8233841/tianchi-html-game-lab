@@ -1,4 +1,5 @@
 import { CONFIG } from './config.js';
+import { EVENTS } from './events.js';
 
 export const SAVE_VERSION = 1;
 const SCENES = ['loading', 'tavern', 'dive', 'extract', 'mix', 'result'];
@@ -28,7 +29,15 @@ function pickCell(c) {
     known: c.known === true,
     picked: c.picked === true,
     content,
+    event: typeof c.event === 'string' && EVENTS[c.event] ? c.event : null,
   };
+}
+
+function pickInterference(v) {
+  if (v === null || v === undefined || typeof v !== 'object') return null;
+  const extra = Number.isFinite(v.extra) ? clamp(Math.round(v.extra), 0, CONFIG.events.interference.extraCost) : 0;
+  const remaining = Number.isFinite(v.remaining) ? clamp(Math.round(v.remaining), 0, CONFIG.events.interference.scans) : 0;
+  return extra > 0 && remaining > 0 ? { extra, remaining } : null;
 }
 
 function pickSettlement(s) {
@@ -64,6 +73,7 @@ function pickRun(run) {
     shield: Number.isFinite(run.shield) ? clamp(Math.round(run.shield), 0, CONFIG.shield.max) : run.shield,
     carried,
     stored,
+    interference: pickInterference(run.interference),
     board: { width: b.width, height: b.height, cells, exit: b.exit },
     status: run.status,
     settlement,
@@ -125,6 +135,12 @@ function validRun(run) {
   if (!Number.isInteger(run.rngState)) return false;
   if (!validResource(run.carried) || !validResource(run.stored)) return false;
   if (!STATUSES.includes(run.status)) return false;
+  if (run.interference !== null) {
+    const f = run.interference;
+    if (!f || typeof f !== 'object') return false;
+    if (!Number.isInteger(f.extra) || f.extra < 1 || f.extra > CONFIG.events.interference.extraCost) return false;
+    if (!Number.isInteger(f.remaining) || f.remaining < 1 || f.remaining > CONFIG.events.interference.scans) return false;
+  }
   const cfg = CONFIG.floors[run.floor];
   const b = run.board;
   if (!b || b.width !== cfg.width || b.height !== cfg.height) return false;
@@ -139,6 +155,7 @@ function validRun(run) {
     if (!Number.isInteger(c.adj) || c.adj < 0 || c.adj > 8) return false;
     if (c.content !== null && (!c.content || typeof c.content !== 'object'
       || !Number.isFinite(c.content.amount) || c.content.amount <= 0)) return false;
+    if (c.event !== null && (typeof c.event !== 'string' || !EVENTS[c.event])) return false;
   }
   if (run.settlement !== null) {
     const s = run.settlement;

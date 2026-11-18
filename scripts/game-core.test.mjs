@@ -4,6 +4,7 @@ import { CONFIG } from '../web/src/core/config.js';
 import { mulberry32, shuffle } from '../web/src/core/rng.js';
 import { generateBoard, revealChain, neighbors } from '../web/src/core/board.js';
 import { createRun, applyAction } from '../web/src/core/rules.js';
+import { EVENTS, applyEvent } from '../web/src/core/events.js';
 import { completion, discountedPrice, surplusCoins, settleRecipe } from '../web/src/core/recipe.js';
 import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
 
@@ -117,7 +118,8 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
 
   const run = createRun({ wish: 'fun', seed: SEED });
   const { state, effects } = scan(run, FIRST);
-  assert.equal(state.stamina, run.stamina - 1);
+  const eventStamina = effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0);
+  assert.equal(state.stamina, run.stamina - 1 + eventStamina);
   const reveals = effects.find((e) => e.type === 'reveals');
   assert.deepEqual(reveals.indices, chain);
   assert.ok(!chain.includes(exit) || state.status === 'extract-ready');
@@ -126,7 +128,8 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
 test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 carried→stored', () => {
   const run = createRun({ wish: 'relief', seed: SEED });
   const first = scan(run, FIRST);
-  assert.equal(first.state.stamina, CONFIG.floors[1].stamina - 1);
+  const firstEventStamina = first.effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0);
+  assert.equal(first.state.stamina, CONFIG.floors[1].stamina - 1 + firstEventStamina);
   const repeat = scan(first.state, FIRST);
   assert.equal(repeat.state, first.state);
   assert.equal(repeat.effects[0].type, 'rejected');
@@ -136,8 +139,11 @@ test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 c
   assert.equal(denied.state.stamina, 0);
 
   const { cells, exit } = first.state.board;
-  const safe = cells.findIndex((c, i) => !c.mine && !c.revealed && i !== exit
-    && !revealChain(cells, 8, 8, i).includes(exit));
+  const safe = cells.findIndex((c, i) => {
+    if (c.mine || c.revealed || i === exit) return false;
+    const chain = revealChain(cells, 8, 8, i);
+    return !chain.includes(exit) && !chain.some((j) => cells[j].event);
+  });
   assert.ok(safe >= 0);
   const loaded = { ...first.state, stamina: 1, carried: { water: 10, stardust: 1 } };
   const { state, effects } = scan(loaded, safe);
@@ -359,4 +365,297 @@ test('⑬ save 真实续玩：createRun+多次 applyAction 后 roundtrip，恢�
   const back = deserialize(serialize({ scene: 'result', run: settled })).run;
   assert.deepEqual(back.settlement, settled.settlement);
   assert.equal(applyAction(back, { type: 'settle' }).effects[0].type, 'rejected');
+});
+
+function singleScanTargets(state, n) {
+  const { cells, exit } = state.board;
+  const out = [];
+  for (let i = 0; i < cells.length && out.length < n; i++) {
+    const c = cells[i];
+    if (!c.mine && !c.revealed && !c.known && !c.event && i !== exit && c.adj > 0) out.push(i);
+  }
+  return out;
+}
+
+function withEvent(state, index, eventId) {
+  const cells = state.board.cells.slice();
+  cells[index] = { ...cells[index], event: eventId };
+  return { ...state, board: { ...state.board, cells } };
+}
+
+function terrain(cells) {
+  return cells.map((c) => [c.mine, c.adj]);
+}
+
+test('⑭ 事件数值：supply+8 / repair 上限3 / cache+20 入 carried / interference 3次 / corrode 保底1', () => {
+  const run = openedRun();
+  const rng = mulberry32(1);
+  const supply = applyEvent(run, 'supply', rng);
+  assert.equal(supply.run.stamina, run.stamina + 8);
+  assert.equal(supply.delta.stamina, 8);
+  const repair = applyEvent({ ...run, shield: 2 }, 'repair', rng);
+  assert.equal(repair.run.shield, 3);
+  const capped = applyEvent({ ...run, shield: 3 }, 'repair', rng);
+  assert.equal(capped.run.shield, 3);
+  assert.equal(capped.delta.shield, 0);
+  const cache = applyEvent(run, 'cache', rng);
+  assert.equal(cache.run.carried.water, run.carried.water + 20);
+  assert.deepEqual(cache.run.stored, run.stored);
+  const jam = applyEvent(run, 'interference', rng);
+  assert.deepEqual(jam.run.interference, { extra: 1, remaining: 3 });
+  const corrode = applyEvent({ ...run, shield: 2 }, 'corrode', rng);
+  assert.equal(corrode.run.shield, 1);
+  const floor = applyEvent({ ...run, shield: 1 }, 'corrode', rng);
+  assert.equal(floor.run.shield, 1);
+  assert.equal(floor.delta.shield, 0);
+  assert.equal(floor.run.status, 'diving');
+  assert.equal(EVENTS.corrode.kind, 'debuff');
+  assert.equal(Object.keys(EVENTS).length, 7);
+});
+
+test('⑮ drink 四选一各 25%：+5体力/+1护盾/+10水/−3体力，体力不为负', () => {
+  const run = openedRun();
+  const at = (v) => { const r = () => v; r.getState = () => 0; return r; };
+  const a = applyEvent(run, 'drink', at(0));
+  assert.equal(a.run.stamina, run.stamina + 5);
+  assert.equal(a.delta.choice, 0);
+  const b = applyEvent({ ...run, shield: 2 }, 'drink', at(0.25));
+  assert.equal(b.run.shield, 3);
+  const c = applyEvent(run, 'drink', at(0.5));
+  assert.equal(c.run.carried.water, run.carried.water + 10);
+  const d = applyEvent(run, 'drink', at(0.75));
+  assert.equal(d.run.stamina, run.stamina - 3);
+  const low = applyEvent({ ...run, stamina: 1 }, 'drink', at(0.75));
+  assert.equal(low.run.stamina, 0);
+  assert.equal(low.delta.stamina, -1);
+  const rng = mulberry32(99);
+  const counts = [0, 0, 0, 0];
+  for (let i = 0; i < 4000; i++) counts[Math.floor(rng() * 4)]++;
+  for (const n of counts) assert.ok(Math.abs(n / 4000 - 0.25) < 0.04, `分布偏差过大: ${counts}`);
+});
+
+test('⑯ interference buff-aware：恰好 3 次扫描各 +1，第 4 次扣 1，拒绝的扫描不消耗次数', () => {
+  let state = openedRun();
+  const targets = singleScanTargets(state, 4);
+  assert.equal(targets.length, 4);
+  state = { ...state, stamina: 20, interference: { extra: 1, remaining: 3 } };
+  state = scan(state, targets[0]).state;
+  assert.equal(state.stamina, 18);
+  assert.deepEqual(state.interference, { extra: 1, remaining: 2 });
+  const denied = scan(state, targets[0]);
+  assert.equal(denied.effects[0].type, 'rejected');
+  assert.deepEqual(denied.state.interference, { extra: 1, remaining: 2 });
+  state = scan(state, targets[1]).state;
+  assert.equal(state.stamina, 16);
+  assert.deepEqual(state.interference, { extra: 1, remaining: 1 });
+  state = scan(state, targets[2]).state;
+  assert.equal(state.stamina, 14);
+  assert.equal(state.interference, null);
+  state = scan(state, targets[3]).state;
+  assert.equal(state.stamina, 13);
+});
+
+test('⑰ 揭示 interference 事件当帧挂 buff：当次扫描不加费，下一次起 +1', () => {
+  const run = openedRun();
+  const [t] = singleScanTargets(run, 1);
+  const forced = withEvent(run, t, 'interference');
+  const first = scan(forced, t);
+  assert.equal(first.state.stamina, run.stamina - 1);
+  assert.deepEqual(first.state.interference, { extra: 1, remaining: 3 });
+  assert.ok(first.effects.some((e) => e.type === 'event' && e.id === 'interference'));
+  const [u] = singleScanTargets(first.state, 1);
+  const second = scan(first.state, u);
+  assert.equal(second.state.stamina, first.state.stamina - 2);
+  assert.deepEqual(second.state.interference, { extra: 1, remaining: 2 });
+});
+
+function radarSetup() {
+  for (let seed = 1; seed <= 60; seed++) {
+    const run = openedRun(seed);
+    if (run.status !== 'diving') continue;
+    const { cells, exit, width, height } = run.board;
+    for (let t = 0; t < cells.length; t++) {
+      const c = cells[t];
+      if (c.mine || c.revealed || c.event || t === exit || c.adj === 0) continue;
+      const area = [t, ...neighbors(t, width, height)];
+      if (area.includes(exit)) continue;
+      if (area.some((i) => i !== t && cells[i].event !== null)) continue;
+      const hasMine = area.some((i) => cells[i].mine && !cells[i].known);
+      const hasHiddenSafe = area.some((i) => i !== t && !cells[i].mine && !cells[i].revealed && i !== exit);
+      if (hasMine && hasHiddenSafe) return { run, t, area };
+    }
+  }
+  throw new Error('找不到雷达测试布局');
+}
+
+test('⑱ radar：3×3 平铺揭示不递归、雷格免费标 known 不扣护盾、非雷格揭示并拾取', () => {
+  const { run, t, area } = radarSetup();
+  const before = run.board.cells;
+  const forced = withEvent({ ...run, shield: 1 }, t, 'radar');
+  const { state, effects } = scan(forced, t);
+  assert.equal(state.shield, 1);
+  assert.equal(state.status, 'diving');
+  const areaSet = new Set(area);
+  const expectedReveals = area.filter((i) => !before[i].mine && !before[i].revealed).sort((a, b) => a - b);
+  const actualReveals = state.board.cells.map((c, i) => (c.revealed && !before[i].revealed ? i : -1)).filter((i) => i >= 0).sort((a, b) => a - b);
+  assert.deepEqual(actualReveals, expectedReveals);
+  for (const i of area) {
+    if (before[i].mine) {
+      assert.equal(state.board.cells[i].known, true);
+      assert.equal(state.board.cells[i].revealed, false);
+    }
+  }
+  const marks = effects.find((e) => e.type === 'mine-mark');
+  assert.ok(marks);
+  assert.deepEqual(marks.indices.slice().sort((a, b) => a - b), area.filter((i) => before[i].mine).sort((a, b) => a - b));
+  let water = 0;
+  let dust = 0;
+  for (const i of expectedReveals) {
+    const c = before[i];
+    if (c.content && !c.picked) {
+      assert.equal(state.board.cells[i].picked, true);
+      if (c.content.type === 'water') water += c.content.amount;
+      else dust += c.content.amount;
+    }
+  }
+  assert.equal(state.carried.water, run.carried.water + water);
+  assert.equal(state.carried.stardust, run.carried.stardust + dust);
+  const pickups = effects.filter((e) => e.type === 'pickup');
+  assert.equal(pickups.length, expectedReveals.filter((i) => before[i].content && !before[i].picked).length);
+  assert.ok(effects.some((e) => e.type === 'event' && e.id === 'radar'));
+  for (let i = 0; i < state.board.cells.length; i++) {
+    if (!areaSet.has(i)) assert.equal(state.board.cells[i].revealed, before[i].revealed, `3×3 之外 ${i} 不应被连锁揭示`);
+  }
+});
+
+test('㉓ 嵌套 radar：雷达揭示到的事件格同帧触发，子雷达平铺并入且不重复触发', () => {
+  let setup = null;
+  for (let seed = 1; seed <= 120 && !setup; seed++) {
+    const run = openedRun(seed);
+    if (run.status !== 'diving') continue;
+    const { cells, exit, width, height } = run.board;
+    for (let t = 0; t < cells.length && !setup; t++) {
+      const c = cells[t];
+      if (c.mine || c.revealed || c.event || t === exit || c.adj === 0) continue;
+      for (const u of neighbors(t, width, height)) {
+        const d = cells[u];
+        if (d.mine || d.revealed || d.event || u === exit || d.adj === 0) continue;
+        const union = new Set([t, u, ...neighbors(t, width, height), ...neighbors(u, width, height)]);
+        if (union.has(exit)) continue;
+        if ([...union].some((i) => cells[i].event !== null)) continue;
+        setup = { run, t, u, union: [...union] };
+        break;
+      }
+    }
+  }
+  assert.ok(setup, '应找到双雷达布局');
+  const { run, t, u, union } = setup;
+  const before = run.board.cells;
+  let forced = withEvent(run, t, 'radar');
+  forced = withEvent(forced, u, 'radar');
+  const { state, effects } = scan(forced, t);
+  const radarEvents = effects.filter((e) => e.type === 'event' && e.id === 'radar');
+  assert.equal(radarEvents.length, 2);
+  assert.deepEqual(radarEvents.map((e) => e.index).sort((a, b) => a - b), [t, u].sort((a, b) => a - b));
+  const expected = union.filter((i) => !before[i].mine && !before[i].revealed).sort((a, b) => a - b);
+  const actual = state.board.cells.map((c, i) => (c.revealed && !before[i].revealed ? i : -1)).filter((i) => i >= 0).sort((a, b) => a - b);
+  assert.deepEqual(actual, expected);
+  for (const i of union) {
+    if (before[i].mine) assert.equal(state.board.cells[i].known, true);
+  }
+  assert.deepEqual(terrain(state.board.cells), terrain(before));
+  assert.equal(state.shield, run.shield);
+});
+
+test('⑲ 不变式：任意事件 applyEvent/scan 前后所有格 adj 与 mine 逐一相等', () => {
+  const ids = Object.keys(EVENTS);
+  for (const seed of [SEED, 1, 7, 42]) {
+    const run = openedRun(seed);
+    const [t] = singleScanTargets(run, 1);
+    for (const id of ids) {
+      const before = terrain(run.board.cells);
+      const direct = applyEvent(run, id, mulberry32(seed), t);
+      assert.deepEqual(terrain(direct.run.board.cells), before, `applyEvent ${id} 改了地形`);
+      const forced = withEvent(run, t, id);
+      const { state } = scan(forced, t);
+      assert.deepEqual(terrain(state.board.cells), before, `scan 事件 ${id} 改了地形`);
+      assert.equal(state.board.cells.filter((c) => c.mine).length, CONFIG.floors[1].mines);
+    }
+  }
+  let l2 = openedRun();
+  l2 = scan(l2, l2.board.exit).state;
+  l2 = applyAction(l2, { type: 'descend' }).state;
+  l2 = scan(l2, 55).state;
+  const [t2] = singleScanTargets(l2, 1);
+  for (const id of ids) {
+    const before = terrain(l2.board.cells);
+    const { state } = scan(withEvent(l2, t2, id), t2);
+    assert.deepEqual(terrain(state.board.cells), before, `L2 scan 事件 ${id} 改了地形`);
+  }
+});
+
+test('⑳ 事件布置：互斥占格、数量符合 config、随机不重复、L1 无 corrode、L2 池含 corrode', () => {
+  let l2Corrode = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    for (const floor of [1, 2]) {
+      const cfg = CONFIG.floors[floor];
+      const { cells, exit } = generateBoard(cfg, seed, floor === 1 ? FIRST : 55);
+      const eventCells = cells.map((c, i) => ({ c, i })).filter(({ c }) => c.event !== null);
+      assert.equal(eventCells.length, cfg.eventCount);
+      const ids = eventCells.map(({ c }) => c.event);
+      assert.equal(new Set(ids).size, ids.length);
+      const pool = CONFIG.events.pools[floor];
+      for (const { c, i } of eventCells) {
+        assert.ok(pool.includes(c.event));
+        assert.equal(c.mine, false);
+        assert.equal(c.content, null);
+        assert.notEqual(i, exit);
+      }
+      if (floor === 1) assert.ok(!ids.includes('corrode'));
+      if (floor === 2 && ids.includes('corrode')) l2Corrode++;
+    }
+  }
+  assert.ok(l2Corrode > 0, 'L2 池应能掷出 corrode');
+  assert.deepEqual(CONFIG.events.pools[1], ['supply', 'repair', 'cache', 'interference', 'drink', 'radar']);
+  assert.ok(CONFIG.events.pools[2].includes('corrode'));
+});
+
+test('㉑ save：interference 与 cell.event roundtrip，clamp 兼容，非法值拒绝/剥离', () => {
+  const run = { ...openedRun(), interference: { extra: 1, remaining: 2 } };
+  assert.ok(run.board.cells.some((c) => c.event !== null));
+  const back = deserialize(serialize({ scene: 'dive', run }));
+  assert.equal(validate(back), true);
+  assert.deepEqual(back.run, JSON.parse(JSON.stringify(run)));
+  assert.deepEqual(back.run.interference, { extra: 1, remaining: 2 });
+  const base = { version: SAVE_VERSION, scene: 'dive', savedAt: 1 };
+  const clamped = deserialize({ ...base, run: { ...run, interference: { extra: 9, remaining: 99 } } });
+  assert.deepEqual(clamped.run.interference, { extra: 1, remaining: 3 });
+  const expired = deserialize({ ...base, run: { ...run, interference: { extra: 1, remaining: 0 } } });
+  assert.equal(expired.run.interference, null);
+  const junk = deserialize({ ...base, run: { ...run, interference: 'hacked' } });
+  assert.equal(junk.run.interference, null);
+  const badEvent = deserialize({
+    ...base,
+    run: { ...run, board: { ...run.board, cells: run.board.cells.map((c, i) => (i === 0 ? { ...c, event: 'hacked' } : c)) } },
+  });
+  assert.equal(badEvent.run.board.cells[0].event, null);
+  assert.equal(deserialize({ ...base, run: { ...run, interference: { extra: 1, remaining: 4 } } }).run.interference.remaining, 3);
+});
+
+test('㉒ drink −3 体力可致耗尽紧急传送（仍存料进结算）', () => {
+  let found = null;
+  for (let seed = 1; seed <= 200 && !found; seed++) {
+    const opened = openedRun(seed);
+    if (opened.status === 'diving' && mulberry32(opened.rngState)() >= 0.75) found = opened;
+  }
+  assert.ok(found, '应找到饮品掷出 −3 的 seed');
+  const [t] = singleScanTargets(found, 1);
+  const loaded = { ...withEvent(found, t, 'drink'), stamina: 2, carried: { water: 12, stardust: 1 } };
+  const { state, effects } = scan(loaded, t);
+  assert.equal(state.stamina, 0);
+  assert.equal(state.status, 'emergency');
+  assert.ok(state.stored.water >= 12);
+  assert.ok(effects.some((e) => e.type === 'emergency'));
+  const ev = effects.find((e) => e.type === 'event' && e.id === 'drink');
+  assert.equal(ev.delta.choice, 3);
 });

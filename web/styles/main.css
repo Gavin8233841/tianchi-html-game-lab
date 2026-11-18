@@ -174,6 +174,26 @@ h2 {
 
 .hint { color: #8b81a8; font-size: 13px; }
 
+.hud-chip.jam { border-color: #ef5da8; color: #ef5da8; }
+
+.event-toast {
+  padding: 8px 10px;
+  border: 2px solid #7ee787;
+  color: #7ee787;
+  background: #1e1830;
+  font-size: 13px;
+  letter-spacing: 1px;
+  box-shadow: inset -2px -2px 0 #16121f, inset 2px 2px 0 #2c2444;
+  animation: toast-in 0.18s ease-out;
+}
+
+.event-toast.debuff { border-color: #ff6b6b; color: #ff6b6b; }
+
+@keyframes toast-in {
+  from { transform: translateY(4px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 @media (max-width: 400px) {
   #app { padding: 10px 10px 24px; }
   h1 { font-size: 18px; letter-spacing: 3px; }

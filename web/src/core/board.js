@@ -28,7 +28,7 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
   const total = width * height;
   const rng = mulberry32(rngState);
   const cells = Array.from({ length: total }, () => ({
-    mine: false, adj: 0, revealed: false, known: false, content: null, picked: false,
+    mine: false, adj: 0, revealed: false, known: false, content: null, picked: false, event: null,
   }));
 
   // 首击格+8邻居绝对无雷，保证首击必 0 必连锁
@@ -57,6 +57,16 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
   for (const amount of floorConfig.stardust) {
     cells[resourceCells[cursor++]].content = { type: 'stardust', amount };
   }
+
+  const eventCandidates = [];
+  for (let i = 0; i < total; i++) {
+    if (!cells[i].mine && i !== exit && !cells[i].content) eventCandidates.push(i);
+  }
+  shuffle(eventCandidates, rng);
+  const pool = CONFIG.events.pools[floorConfig.id].slice();
+  shuffle(pool, rng);
+  const eventCount = Math.min(floorConfig.eventCount, pool.length, eventCandidates.length);
+  for (let i = 0; i < eventCount; i++) cells[eventCandidates[i]].event = pool[i];
 
   for (let i = 0; i < total; i++) {
     if (cells[i].mine) continue;
