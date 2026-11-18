@@ -10,6 +10,7 @@ const FLIP_TIME = 0.12;
 const POP_TIME = 0.9;
 const FLAG_POP_TIME = 0.45;
 const TOAST_TIME = 1.5;
+const CARD_TIME = 2.4;
 const RESOURCE_LABEL = { water: '水', stardust: '星尘' };
 const RESOURCE_UNIT = { water: 'ml', stardust: 'g' };
 const RESOURCE_COLOR = { water: '#6cb8ff', stardust: '#f2c14e' };
@@ -33,6 +34,8 @@ let mode = 'scan';
 let keyHandler = null;
 let toastTimer = null;
 let toastEl = null;
+let eventCardEl = null;
+let eventCardTimer = null;
 
 function layoutFor(ctx) {
   const { width, height } = ctx.run.board;
@@ -211,28 +214,75 @@ function showToast(ctx, text, kind) {
   });
 }
 
-function eventFx(ctx, ev) {
+function deltaLines(ev) {
+  const delta = ev.delta || {};
+  const lines = [];
+  if (delta.stamina) lines.push([`${delta.stamina > 0 ? '+' : ''}${delta.stamina} 体力`, delta.stamina > 0 ? '#7ee787' : '#ff6b6b']);
+  if (delta.shield) lines.push([`${delta.shield > 0 ? '+' : ''}${delta.shield} 护盾`, delta.shield > 0 ? '#57e6d9' : '#ff6b6b']);
+  if (delta.water) lines.push([`+${delta.water}ml 水`, '#6cb8ff']);
+  if (delta.interference) lines.push([`接下来 ${delta.interference.remaining} 次扫描各 +${delta.interference.extra} 体力`, '#ef5da8']);
+  if (ev.id === 'radar') lines.push(['周围 3×3 安全揭示，雷已免费标记', '#57e6d9']);
+  if (ev.id === 'corrode' && !delta.shield) lines.push(['护盾已最低，未受损', '#8b81a8']);
+  if (lines.length === 0) lines.push(['没有实质变化', '#8b81a8']);
+  return lines;
+}
+
+function removeEventCard(ctx) {
+  if (eventCardTimer !== null) {
+    ctx.scheduler.cancel(eventCardTimer);
+    eventCardTimer = null;
+  }
+  if (eventCardEl) {
+    eventCardEl.remove();
+    eventCardEl = null;
+  }
+}
+
+// 事件大卡片：图标+名称+说明+数值变化，停留 CARD_TIME 供玩家看清，期间锁输入。
+// 多事件按 CARD_TIME 间隔排队依次展示（调度器驱动，刷新安全）。
+function eventCard(ctx, ev) {
   const def = EVENTS[ev.id];
   if (!def) return;
+  removeEventCard(ctx);
   const delta = ev.delta || {};
   const down = def.kind === 'debuff'
     || (delta.stamina !== undefined && delta.stamina < 0)
     || (delta.shield !== undefined && delta.shield < 0);
   ctx.audio.play(down ? 'eventDown' : 'eventUp');
   eventPops.push({ index: ev.index, sprite: get(def.icon), age: 0 });
-  showToast(ctx, `${def.name} · ${def.desc}`, down ? 'debuff' : 'buff');
   const c = cellCenter(ev.index, ctx.run.board.width);
-  const lines = [];
-  if (delta.stamina) lines.push([`${delta.stamina > 0 ? '+' : ''}${delta.stamina} 体力`, delta.stamina > 0 ? '#7ee787' : '#ff6b6b']);
-  if (delta.shield) lines.push([`${delta.shield > 0 ? '+' : ''}${delta.shield} 护盾`, delta.shield > 0 ? '#57e6d9' : '#ff6b6b']);
-  if (delta.water) lines.push([`+${delta.water}ml 水`, '#6cb8ff']);
-  if (delta.interference) lines.push([`干扰 ×${delta.interference.remaining}`, '#ef5da8']);
-  if (ev.id === 'radar') lines.push(['雷达扫描', '#57e6d9']);
-  if (ev.id === 'corrode' && !delta.shield) lines.push(['护盾已最低', '#8b81a8']);
-  lines.forEach(([text, color], k) => {
+  deltaLines(ev).forEach(([text, color], k) => {
     ctx.fx.spawnFloatText(c.x, c.y - 4 - k * 7, text, color, { size: 6, life: 0.9 });
   });
   if (delta.water) pulseBar(ctx, 'water');
+
+  const card = document.createElement('div');
+  card.className = `event-card ${down ? 'debuff' : def.kind === 'random' ? 'random' : 'buff'}`;
+  const icon = document.createElement('img');
+  icon.className = 'event-card-icon';
+  icon.alt = '';
+  icon.src = get(def.icon).toDataURL();
+  const body = document.createElement('div');
+  body.className = 'event-card-body';
+  const name = document.createElement('div');
+  name.className = 'event-card-name';
+  name.textContent = def.name;
+  const desc = document.createElement('div');
+  desc.className = 'event-card-desc';
+  desc.textContent = def.desc;
+  body.append(name, desc);
+  const deltas = document.createElement('div');
+  deltas.className = 'event-card-deltas';
+  for (const [text, color] of deltaLines(ev)) {
+    const span = document.createElement('span');
+    span.textContent = text;
+    span.style.color = color;
+    deltas.append(span);
+  }
+  card.append(icon, body, deltas);
+  ctx.panel.append(card);
+  eventCardEl = card;
+  eventCardTimer = ctx.scheduler.after(CARD_TIME, () => removeEventCard(ctx));
 }
 
 function markFx(ctx, indices) {
@@ -268,9 +318,9 @@ function aftermath(ctx, state, effects, clicked, delay, waves, locked) {
     ctx.input.lock();
     locked = true;
     eventEffects.forEach((ev, k) => {
-      queueTimers.push(ctx.scheduler.after(delay + k * 0.35, () => eventFx(ctx, ev)));
+      queueTimers.push(ctx.scheduler.after(delay + k * CARD_TIME, () => eventCard(ctx, ev)));
     });
-    delay += eventEffects.length * 0.35 + 0.5;
+    delay += eventEffects.length * CARD_TIME + 0.3;
   }
 
   if (mine) {
@@ -360,6 +410,8 @@ export const dive = {
     mode = 'scan';
     toastTimer = null;
     toastEl = null;
+    eventCardEl = null;
+    eventCardTimer = null;
     const cells = ctx.run.board.cells;
     if (cells) {
       // 恢复/进场直接渲染逻辑终态，不重放连锁（刷新安全）
@@ -414,6 +466,7 @@ export const dive = {
       toastEl.remove();
       toastEl = null;
     }
+    removeEventCard(ctx);
     eventPops = [];
     flagPops = [];
     glowT = 0;

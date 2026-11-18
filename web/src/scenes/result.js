@@ -1,5 +1,6 @@
 import { bake, get, spr, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
 import { easeOutBack } from '../engine/fx.js';
+import { depositWarehouse, sanitizeWarehouse } from '../core/warehouse.js';
 
 const WISH_DONE = {
   relief: '烦恼溶进酒里，今晚好眠。',
@@ -66,9 +67,16 @@ export const result = {
     window.addEventListener('resize', resizeHandler);
 
     const percent = Math.round(s.completion * 100);
-    const surplusLine = s.coins > 0
-      ? `余料入账 +${s.coins} 币（水 ${s.surplusWater}ml×1 + 星尘 ${s.surplusStardust}g×5，钱包只显示）`
-      : '没有余料可卖，钱包不动。';
+    // 余料入酒馆仓库（跨局持久）；banked 标记防刷新重复入库
+    let warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
+    if (!s.banked) {
+      warehouse = depositWarehouse(warehouse, s);
+      ctx.storage.saveWarehouse(warehouse);
+      ctx.commitRun({ ...run, settlement: { ...s, banked: true } });
+    }
+    const surplusLine = s.surplusWater + s.surplusStardust > 0
+      ? `余料入库：水 +${s.surplusWater}ml · 星尘 +${s.surplusStardust}g（仓库现有 水${warehouse.water}ml · 星尘${warehouse.stardust}g）`
+      : `没有余料。仓库现有 水${warehouse.water}ml · 星尘${warehouse.stardust}g`;
     const lines = s.fulfilled
       ? [
         [WISH_DONE[run.wish], ''],

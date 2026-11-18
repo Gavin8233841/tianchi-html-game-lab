@@ -51,6 +51,7 @@ function pickSettlement(s) {
     out[key] = s[key];
   }
   out.fulfilled = s.fulfilled === true;
+  out.banked = s.banked === true;
   return out;
 }
 
