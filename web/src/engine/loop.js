@@ -22,16 +22,22 @@ export function createScheduler() {
   };
 }
 
+const STEP = 1 / 60;
+
 export function createLoop({ update, render }) {
   let rafId = 0;
   let last = 0;
+  let acc = 0;
   let running = false;
   function frame(t) {
     if (!running) return;
-    const dt = Math.min((t - last) / 1000, 0.25);
+    acc += Math.min((t - last) / 1000, 0.25);
     last = t;
-    update(dt);
-    render();
+    while (acc >= STEP) {
+      update(STEP);
+      acc -= STEP;
+    }
+    render(acc / STEP);
     rafId = requestAnimationFrame(frame);
   }
   return {
@@ -39,6 +45,7 @@ export function createLoop({ update, render }) {
       if (running) return;
       running = true;
       last = performance.now();
+      acc = 0;
       rafId = requestAnimationFrame(frame);
     },
     stop() {

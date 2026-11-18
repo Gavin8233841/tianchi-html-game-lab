@@ -1,5 +1,7 @@
 export function cleanupGameState(ctx, { keepRun = true } = {}) {
   ctx.scheduler.clear();
+  if (ctx.particles) ctx.particles.clear();
+  if (ctx.fx) ctx.fx.clear();
   ctx.input.unlock();
   ctx.hud.clear();
   ctx.panel.replaceChildren();

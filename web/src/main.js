@@ -2,6 +2,8 @@ import { createLoop, createScheduler } from './engine/loop.js';
 import { createSceneMachine } from './engine/scenes.js';
 import { createInput } from './engine/input.js';
 import { createStorage } from './engine/storage.js';
+import { createFx } from './engine/fx.js';
+import { createParticles } from './engine/particles.js';
 import { serialize } from './core/save.js';
 import { createHud } from './ui/hud.js';
 import { loading } from './scenes/loading.js';
@@ -23,6 +25,8 @@ const ctx = {
   panel,
   hud: createHud(hudRoot),
   scheduler: createScheduler(),
+  fx: createFx(),
+  particles: createParticles(),
   storage,
   run: null,
   currentSceneName: null,
@@ -51,10 +55,21 @@ ctx.input = createInput({ canvas, onPointer: (evt) => machine.onPointer(evt) });
 
 const loop = createLoop({
   update(dt) {
+    ctx.fx.update(dt);
+    if (ctx.fx.isFrozen()) return;
     ctx.scheduler.tick(dt);
+    ctx.particles.update(dt);
     machine.update(dt);
   },
-  render() { machine.render(); },
+  render() {
+    const { x, y } = ctx.fx.shakeOffset();
+    ctx.g.save();
+    ctx.g.translate(x, y);
+    machine.render();
+    ctx.particles.render(ctx.g);
+    ctx.fx.render(ctx.g);
+    ctx.g.restore();
+  },
 });
 
 const onVisibility = () => {

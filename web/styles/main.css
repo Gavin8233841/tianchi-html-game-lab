@@ -113,6 +113,13 @@ h2 {
 
 .bar-wrap.full .bar-label { color: #f2c14e; }
 
+.bar-wrap.pulse .bar-track { animation: bar-pulse 0.4s ease-out; }
+
+@keyframes bar-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.8); border-color: #f2c14e; }
+  100% { box-shadow: 0 0 0 8px rgba(242, 193, 78, 0); }
+}
+
 .badge {
   border: 2px solid;
   padding: 2px 8px;
