@@ -20,6 +20,14 @@ export const PALETTE = {
   n: '#57e6d9',
   f: '#ef5da8',
   x: '#ffffff',
+  c: '#5a3a28',
+  C: '#7a5238',
+  V: '#9a6a48',
+  G: '#8a8f9c',
+};
+
+export const SPRITE_PALETTES = {
+  bartender: { h: '#3a2e2a', s: '#e8b88a', e: '#221c26', t: '#8c5aa8', w: '#e8e4da' },
 };
 
 export const DIGIT_COLORS = {
@@ -314,6 +322,67 @@ const eventCorrode = [
   'bbbbbbbbbbbbbbbb',
 ];
 
+const bartender = [
+  '....hhhh....',
+  '...hhhhhh...',
+  '...hssssh...',
+  '...sesses...',
+  '...ssssss...',
+  '....ssss....',
+  '..tttttttt..',
+  '.tttttttttt.',
+  '.ttwwwwwwtt.',
+  '..twwwwwwt..',
+  '..wwwwwwww..',
+  '..wwwwwwww..',
+];
+
+const barCounter = [
+  'VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
+  'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+  'cccccccccccccccccccccccccccccccc',
+  'ccCCccccccccCCcccccccccCCccccccc',
+  'cccccccccccccccccccccccccccccccc',
+  'cccccccCCccccccccccCCccccccccccc',
+  'cccccccccccccccccccccccccccccccc',
+  'ccCCcccccccccCCccccccccccccCCccc',
+  'cccccccccccccccccccccccccccccccc',
+  'oooooooooooooooooooooooooooooooo',
+];
+
+const glass = [
+  'gggggggggggggggg',
+  '.g............g.',
+  '..g..........g..',
+  '...g........g...',
+  '....g......g....',
+  '.....g....g.....',
+  '......g..g......',
+  '.......gg.......',
+  '.......gg.......',
+  '.......gg.......',
+  '.......gg.......',
+  '.......gg.......',
+  '....gggggggg....',
+  '...gggggggggg...',
+];
+
+const shaker = [
+  '...gggg...',
+  '..gxxxxg..',
+  '..gggggg..',
+  '.gggggggg.',
+  '.gxgggggG.',
+  '.gxgggggG.',
+  '.gxgggggG.',
+  '.gxgggggG.',
+  '.gxgggggG.',
+  '.gxgggggG.',
+  '.gggggggg.',
+  '..gggggg..',
+  '..GGGGGG..',
+];
+
 const digits = {
   1: ['..x..', '.xx..', '..x..', '..x..', '..x..', '..x..', '.xxx.'],
   2: ['.xxx.', 'x...x', '....x', '...x.', '..x..', '.x...', 'xxxxx'],
@@ -341,5 +410,9 @@ export const PIXELS = {
   eventDrink,
   eventRadar,
   eventCorrode,
+  bartender,
+  barCounter,
+  glass,
+  shaker,
   digits,
 };
