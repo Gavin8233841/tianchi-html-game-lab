@@ -28,19 +28,20 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
   const total = width * height;
   const rng = mulberry32(rngState);
   const cells = Array.from({ length: total }, () => ({
-    mine: false, adj: 0, revealed: false, known: false, content: null, picked: false, event: null,
+    mine: false, adj: 0, revealed: false, known: false, probed: false, picked: false, flagged: false, content: null, event: null,
   }));
 
-  // 首击格+8邻居绝对无雷，保证首击必 0 必连锁
-  const safeZone = new Set([firstIndex, ...neighbors(firstIndex, width, height)]);
+  // v2 首击安全：首击格本身排除 mine+event（保证是安全格）；
+  // 9 邻域只排除 mine，允许 event → 首击 adj=邻格事件数，常>0 需思考，不再必 0 大连锁。
+  const mineZone = new Set([firstIndex, ...neighbors(firstIndex, width, height)]);
   const mineCandidates = [];
-  for (let i = 0; i < total; i++) if (!safeZone.has(i)) mineCandidates.push(i);
+  for (let i = 0; i < total; i++) if (!mineZone.has(i)) mineCandidates.push(i);
   shuffle(mineCandidates, rng);
   for (let i = 0; i < mines; i++) cells[mineCandidates[i]].mine = true;
 
-  // 出口放在距首击最远的 30% 候选里，找出口本身是一段探索
+  // 出口放在距首击最远的 exitFarRatio 比例候选里，找出口本身是一段探索
   const exitCandidates = [];
-  for (let i = 0; i < total; i++) if (!cells[i].mine && !safeZone.has(i)) exitCandidates.push(i);
+  for (let i = 0; i < total; i++) if (!cells[i].mine && !mineZone.has(i)) exitCandidates.push(i);
   exitCandidates.sort((a, b) => chebyshev(b, firstIndex, width) - chebyshev(a, firstIndex, width) || a - b);
   const farCount = Math.max(1, Math.ceil(exitCandidates.length * CONFIG.exitFarRatio));
   const exit = exitCandidates[Math.floor(rng() * farCount)];
@@ -58,9 +59,10 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
     cells[resourceCells[cursor++]].content = { type: 'stardust', amount };
   }
 
+  // 事件布置互斥：雷→出口→原料→事件；首击格本身也排除事件（邻域允许）
   const eventCandidates = [];
   for (let i = 0; i < total; i++) {
-    if (!cells[i].mine && i !== exit && !cells[i].content) eventCandidates.push(i);
+    if (!cells[i].mine && i !== exit && i !== firstIndex && !cells[i].content) eventCandidates.push(i);
   }
   shuffle(eventCandidates, rng);
   const pool = CONFIG.events.pools[floorConfig.id].slice();
@@ -68,9 +70,10 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
   const eventCount = Math.min(floorConfig.eventCount, pool.length, eventCandidates.length);
   for (let i = 0; i < eventCount; i++) cells[eventCandidates[i]].event = pool[i];
 
+  // v2 数字语义：adj = 邻格「雷 OR 事件」总数（原料格与出口不计入）
   for (let i = 0; i < total; i++) {
     if (cells[i].mine) continue;
-    cells[i].adj = neighbors(i, width, height).filter((n) => cells[n].mine).length;
+    cells[i].adj = neighbors(i, width, height).filter((n) => cells[n].mine || cells[n].event).length;
   }
   return { cells, exit, rngState: rng.getState() };
 }

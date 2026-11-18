@@ -27,7 +27,9 @@ function pickCell(c) {
     adj: Number.isInteger(c.adj) ? c.adj : 0,
     revealed: c.revealed === true,
     known: c.known === true,
+    probed: c.probed === true,
     picked: c.picked === true,
+    flagged: c.flagged === true,
     content,
     event: typeof c.event === 'string' && EVENTS[c.event] ? c.event : null,
   };
@@ -151,7 +153,8 @@ function validRun(run) {
   for (const c of b.cells) {
     if (!c || typeof c !== 'object') return false;
     if (typeof c.mine !== 'boolean' || typeof c.revealed !== 'boolean'
-      || typeof c.known !== 'boolean' || typeof c.picked !== 'boolean') return false;
+      || typeof c.known !== 'boolean' || typeof c.picked !== 'boolean'
+      || typeof c.probed !== 'boolean' || typeof c.flagged !== 'boolean') return false;
     if (!Number.isInteger(c.adj) || c.adj < 0 || c.adj > 8) return false;
     if (c.content !== null && (!c.content || typeof c.content !== 'object'
       || !Number.isFinite(c.content.amount) || c.content.amount <= 0)) return false;
