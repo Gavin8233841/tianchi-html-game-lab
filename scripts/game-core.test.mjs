@@ -7,6 +7,7 @@ import { createRun, applyAction } from '../web/src/core/rules.js';
 import { EVENTS, applyEvent } from '../web/src/core/events.js';
 import { completion, discountedPrice, surplusCoins, settleRecipe } from '../web/src/core/recipe.js';
 import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
+import { EMPTY_WAREHOUSE, depositWarehouse, sanitizeWarehouse } from '../web/src/core/warehouse.js';
 
 const SEED = 20261118;
 const FIRST = 27;
@@ -898,4 +899,35 @@ test('㉙ save v2：probed/flagged/known roundtrip；旧档缺字段默认 false
     assert.equal(c.probed, false);
     assert.equal(c.flagged, false);
   }
+});
+test('㉚ warehouse：余料入库累加、sanitize 拒非法、空仓库为 0', () => {
+  const empty = EMPTY_WAREHOUSE();
+  assert.deepEqual(empty, { water: 0, stardust: 0 });
+  const s = settleRecipe({ water: 90, stardust: 10 });
+  assert.equal(s.surplusWater, 30);
+  assert.equal(s.surplusStardust, 4);
+  const w1 = depositWarehouse(empty, s);
+  assert.deepEqual(w1, { water: 30, stardust: 4 });
+  const w2 = depositWarehouse(w1, s);
+  assert.deepEqual(w2, { water: 60, stardust: 8 });
+  assert.deepEqual(sanitizeWarehouse(null), empty);
+  assert.deepEqual(sanitizeWarehouse({ water: -5, stardust: 'x' }), empty);
+  assert.deepEqual(sanitizeWarehouse({ water: 12.9, stardust: 3 }), { water: 12, stardust: 3 });
+});
+
+test('㉛ save：settlement.banked roundtrip，旧档缺省 false（防重复入库标记可持久）', () => {
+  let run = createRun({ wish: 'relief', seed: 42 });
+  run = { ...run, status: 'extracted', stored: { water: 90, stardust: 10 } };
+  run = applyAction(run, { type: 'settle' }).state;
+  assert.equal(run.settlement.banked, false);
+  const banked = { ...run, settlement: { ...run.settlement, banked: true } };
+  const back = deserialize(serialize({ scene: 'result', run: banked }));
+  assert.ok(back);
+  assert.equal(back.run.settlement.banked, true);
+  // 旧档无 banked 字段 → 缺省 false
+  const legacy = serialize({ scene: 'result', run });
+  delete legacy.run.settlement.banked;
+  const restored = deserialize(legacy);
+  assert.ok(restored);
+  assert.equal(restored.run.settlement.banked, false);
 });

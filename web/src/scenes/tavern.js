@@ -1,5 +1,6 @@
 import { createRun } from '../core/rules.js';
 import { bake, get, spr, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
+import { sanitizeWarehouse } from '../core/warehouse.js';
 
 const WISHES = [
   { id: 'relief', label: '买醉解忧', desc: '忘掉烦恼的一杯' },
@@ -51,6 +52,14 @@ export const tavern = {
     const intro = document.createElement('p');
     intro.textContent = '旅人，想喝点什么？10 秒内选好愿望，去矿区挖原料。水在浅层就有，星尘只在更深处。';
     ctx.panel.append(intro);
+
+    const warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
+    if (warehouse.water + warehouse.stardust > 0) {
+      const stock = document.createElement('p');
+      stock.className = 'hint warehouse-line';
+      stock.textContent = `酒馆仓库：水 ${warehouse.water}ml · 星尘 ${warehouse.stardust}g（挖多的原料自动入库，老板先帮你存着）`;
+      ctx.panel.append(stock);
+    }
 
     const wrap = document.createElement('div');
     wrap.className = 'wish-wrap';

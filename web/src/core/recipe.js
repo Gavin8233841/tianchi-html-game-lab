@@ -24,5 +24,6 @@ export function settleRecipe(stored) {
     surplusWater: Math.max(0, stored.water - CONFIG.recipe.water),
     surplusStardust: Math.max(0, stored.stardust - CONFIG.recipe.stardust),
     coins: surplusCoins(stored),
+    banked: false,
   };
 }
