@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>HTML Game Lab · 协作就绪</title>
+    <title>星际酒馆</title>
+    <link rel="stylesheet" href="styles/main.css">
   </head>
   <body>
-    <main>
-      <h1>协作环境已就绪</h1>
-      <p>HTML Game Lab · 游戏方向待讨论</p>
-      <p>这是本地启动检查页，游戏尚未开始制作。</p>
+    <main id="app">
+      <h1>星际酒馆</h1>
+      <header id="hud" aria-live="polite"></header>
+      <canvas id="game" width="480" height="480"></canvas>
+      <section id="panel"></section>
     </main>
+    <script type="module" src="src/main.js"></script>
   </body>
 </html>

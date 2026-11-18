@@ -6,6 +6,6 @@
   "engines": { "node": ">=22.12.0" },
   "scripts": {
     "dev": "node scripts/preview.mjs",
-    "check": "node --check scripts/preview.mjs && node --test scripts/preview.test.mjs"
+    "check": "node --check scripts/preview.mjs && node --test \"scripts/*.test.mjs\""
   }
 }

@@ -29,7 +29,7 @@ test('新工作区可预览网页，项目资料不通过预览端口公开', { 
   const response = await fetch(base);
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
-  assert.match(await response.text(), /协作环境已就绪/);
+  assert.match(await response.text(), /星际酒馆/);
   assert.equal((await fetch(`${base}/missing-file`)).status, 404);
   assert.equal((await fetch(`${base}/AGENTS.md`)).status, 404);
   assert.equal((await fetch(`${base}/%2e%2e%2fAGENTS.md`)).status, 403);
