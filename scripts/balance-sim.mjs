@@ -101,6 +101,10 @@ const FAR_BIAS = !argv.includes('--no-far-bias');
 function chooseDeduction(state, rng, firstIndex) {
   const { width, height, cells } = state.board;
   const { safe, suspects, constraints, candidates, globalP } = analyze(state);
+  // v5：已揭示未收集的原料 → 免费拾取（优先攒料）
+  const loot = [];
+  cells.forEach((c, i) => { if (c.revealed && c.content && !c.picked) loot.push(i); });
+  if (loot.length > 0) return { action: 'scan', index: pickRandom(loot, rng), guess: false };
   const low = state.stamina <= LOW_STAMINA;
   const cut = farCutoff(width, height, firstIndex);
   const isFar = (i) => chebyshev(i, firstIndex, width) >= cut;

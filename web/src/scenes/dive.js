@@ -434,7 +434,7 @@ export const dive = {
     ctx.hud.setMode(mode, (m) => selectMode(ctx, m));
     const tip = document.createElement('p');
     tip.className = 'hint';
-    tip.textContent = '数字=周围雷+事件总数。挖=扫描(0连锁)；探=安全认清一格；旗=标记疑似。推出特殊格后探明再决定挖不挖。右键随时插旗，快捷键 1/2/3。';
+    tip.textContent = '数字=周围雷+事件总数。挖=扫描(0连锁)；探=安全认清一格；旗=标记疑似。连锁翻出的原料留在原地，点一下才收集（+10ml/格）。推出特殊格后探明再决定挖不挖。右键插旗，快捷键 1/2/3。';
     ctx.panel.append(tip);
   },
   exit(ctx) {
@@ -589,6 +589,16 @@ export const dive = {
       flagPops.push({ index, age: 0, on: flag.on });
       ctx.fx.spawnFloatText(clicked.x, clicked.y - 2, flag.on ? '标记' : '取消标记', '#ef5da8', { size: 5, life: 0.5 });
       return;
+    }
+
+    // v5：点击已揭示未收集的原料 = 免费拾取，无挖掘/体力演出
+    if (action === 'scan' && run.board.cells) {
+      const c0 = run.board.cells[index];
+      if (c0.revealed && c0.content && !c0.picked) {
+        const pickup = effects.find((e) => e.type === 'pickup');
+        if (pickup) pickupFx(ctx, pickup);
+        return;
+      }
     }
 
     if (action === 'probe') {
