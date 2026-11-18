@@ -127,6 +127,80 @@ function applyScan(state, index) {
   return { state: next, effects };
 }
 
+function applyProbe(state, index) {
+  if (state.status !== 'diving') return rejected(state, 'not-diving');
+  if (state.stamina <= 0) return rejected(state, 'no-stamina');
+  const { width, height } = state.board;
+  if (!Number.isInteger(index) || index < 0 || index >= width * height) return rejected(state, 'out-of-board');
+
+  let board = state.board;
+  let rngState = state.rngState;
+  if (board.cells === null) {
+    const generated = generateBoard(CONFIG.floors[state.floor], rngState, index);
+    board = { ...board, cells: generated.cells, exit: generated.exit };
+    rngState = generated.rngState;
+  }
+  const cell = board.cells[index];
+  if (cell.revealed) return rejected(state, 'already-open');
+
+  // probe 固定耗 probeCost，不享受 interference 加费，也不消耗干扰次数
+  const cost = CONFIG.probeCost;
+  let next = { ...state, board, rngState, stamina: Math.max(0, state.stamina - cost) };
+  const effects = [];
+  const cells = board.cells.slice();
+
+  if (cell.mine) {
+    // 安全认雷：known+probed，不扣护盾，不揭示
+    cells[index] = { ...cell, known: true, probed: true };
+    next = { ...next, board: { ...board, cells } };
+    effects.push({ type: 'probe', index, kind: 'mine' });
+  } else if (cell.event) {
+    // 认出事件种类但不触发：probed，revealed 仍 false
+    cells[index] = { ...cell, probed: true };
+    next = { ...next, board: { ...board, cells } };
+    effects.push({ type: 'probe', index, kind: 'event', event: cell.event });
+  } else {
+    // 安全格/原料/出口：单格翻开（不连锁）+拾取+出口判定
+    cells[index] = { ...cell, revealed: true, probed: true };
+    effects.push({ type: 'probe', index, kind: 'safe' });
+    if (cell.content && !cell.picked) {
+      cells[index] = { ...cells[index], picked: true };
+      const carried = { ...next.carried, [cell.content.type]: next.carried[cell.content.type] + cell.content.amount };
+      next = { ...next, carried };
+      effects.push({ type: 'pickup', index, resource: cell.content.type, amount: cell.content.amount });
+    }
+    next = { ...next, board: { ...board, cells } };
+    if (index === board.exit) {
+      const { next: deposited, effect } = deposit(next);
+      next = { ...deposited, status: 'extract-ready' };
+      effects.push({ type: 'exit', index: board.exit }, effect);
+      return { state: next, effects };
+    }
+  }
+
+  if (next.stamina <= 0) {
+    const { next: deposited, effect } = deposit(next);
+    next = { ...deposited, status: 'emergency' };
+    effects.push({ type: 'emergency' }, effect);
+  }
+  return { state: next, effects };
+}
+
+function applyFlag(state, index) {
+  if (state.status !== 'diving') return rejected(state, 'not-diving');
+  const { width, height } = state.board;
+  if (!Number.isInteger(index) || index < 0 || index >= width * height) return rejected(state, 'out-of-board');
+  if (state.board.cells === null) return rejected(state, 'no-board');
+  const cell = state.board.cells[index];
+  if (cell.revealed) return rejected(state, 'already-open');
+  // 纯标记：不耗体力、不改任何逻辑字段，可切换
+  const cells = state.board.cells.slice();
+  const on = !cell.flagged;
+  cells[index] = { ...cell, flagged: on };
+  const next = { ...state, board: { ...state.board, cells } };
+  return { state: next, effects: [{ type: 'flag', index, on }] };
+}
+
 function applyDescend(state) {
   if (state.status !== 'extract-ready') return rejected(state, 'not-at-exit');
   if (state.floor >= CONFIG.maxFloor) return rejected(state, 'no-deeper-floor');
@@ -158,6 +232,8 @@ function applySettle(state) {
 export function applyAction(state, action) {
   switch (action.type) {
     case 'scan': return applyScan(state, action.index);
+    case 'probe': return applyProbe(state, action.index);
+    case 'flag': return applyFlag(state, action.index);
     case 'descend': return applyDescend(state);
     case 'extract': return applyExtract(state);
     case 'settle': return applySettle(state);

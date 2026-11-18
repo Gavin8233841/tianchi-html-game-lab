@@ -42,13 +42,16 @@ test('① rng：同 seed 序列一致，rngState 可序列化续接，shuffle �
   assert.deepEqual(s1, s2);
 });
 
-test('② board：雷数精确、首击安全、数字暴力重算、内容互斥、出口非雷、同 seed 逐格一致', () => {
+test('② board：雷数精确、首击格非雷非事件、邻域无雷可含事件、adj=雷+事件暴力重算、内容互斥、出口非雷、同 seed 逐格一致', () => {
   const cfg = CONFIG.floors[1];
   const { cells, exit } = generateBoard(cfg, SEED, FIRST);
   assert.equal(cells.filter((c) => c.mine).length, cfg.mines);
   const zone = [FIRST, ...neighbors(FIRST, cfg.width, cfg.height)];
   for (const i of zone) assert.equal(cells[i].mine, false);
-  assert.equal(cells[FIRST].adj, 0);
+  // v2 首击：格子本身保证安全（非雷非事件），邻域允许事件 → adj=邻格事件数
+  assert.equal(cells[FIRST].mine, false);
+  assert.equal(cells[FIRST].event, null);
+  assert.equal(cells[FIRST].adj, neighbors(FIRST, cfg.width, cfg.height).filter((n) => cells[n].event).length);
   for (let i = 0; i < cells.length; i++) {
     if (cells[i].mine) continue;
     const x = i % cfg.width;
@@ -60,30 +63,68 @@ test('② board：雷数精确、首击安全、数字暴力重算、内容互�
         const ny = y + dy;
         if (dx === 0 && dy === 0) continue;
         if (nx < 0 || nx >= cfg.width || ny < 0 || ny >= cfg.height) continue;
-        if (cells[ny * cfg.width + nx].mine) count++;
+        const n = cells[ny * cfg.width + nx];
+        if (n.mine || n.event) count++;
       }
     }
     assert.equal(cells[i].adj, count);
   }
   assert.equal(cells[exit].mine, false);
+  assert.equal(cells[exit].event, null);
   assert.equal(cells[exit].content, null);
   for (const c of cells) if (c.mine) assert.equal(c.content, null);
   const waterCells = cells.filter((c) => c.content?.type === 'water');
   assert.equal(waterCells.length, cfg.water.length);
-  assert.equal(waterCells.reduce((s, c) => s + c.content.amount, 0), 80);
+  assert.equal(waterCells.reduce((s, c) => s + c.content.amount, 0), cfg.water.reduce((s, v) => s + v, 0));
   const again = generateBoard(cfg, SEED, FIRST);
   assert.deepEqual(again.cells, cells);
   assert.equal(again.exit, exit);
   const l2 = generateBoard(CONFIG.floors[2], SEED, 55);
   const dust = l2.cells.filter((c) => c.content?.type === 'stardust');
-  assert.equal(dust.length, 3);
-  assert.equal(dust.reduce((s, c) => s + c.content.amount, 0), 10);
-  assert.equal(l2.cells.filter((c) => c.mine).length, 16);
+  assert.equal(dust.length, CONFIG.floors[2].stardust.length);
+  assert.equal(dust.reduce((s, c) => s + c.content.amount, 0), CONFIG.floors[2].stardust.reduce((s, v) => s + v, 0));
+  assert.equal(l2.cells.filter((c) => c.mine).length, 18);
 });
 
-test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳定，连锁不耗额外体力', () => {
+test('②b v2 数字语义：原料格/出口不计入 adj；事件计入 adj；首击格多 seed 恒非特殊', () => {
+  let eventOnlyNumber = 0;
+  let firstNeighborEvent = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    for (const floor of [1, 2]) {
+      const cfg = CONFIG.floors[floor];
+      const first = floor === 1 ? FIRST : 55;
+      const { cells, exit } = generateBoard(cfg, seed, first);
+      assert.equal(cells[first].mine, false);
+      assert.equal(cells[first].event, null);
+      const ns = neighbors(first, cfg.width, cfg.height);
+      for (const n of ns) assert.equal(cells[n].mine, false);
+      if (ns.some((n) => cells[n].event)) firstNeighborEvent++;
+      for (let i = 0; i < cells.length; i++) {
+        const c = cells[i];
+        if (c.mine) continue;
+        const around = neighbors(i, cfg.width, cfg.height);
+        const specials = around.filter((n) => cells[n].mine || cells[n].event).length;
+        assert.equal(c.adj, specials, `格 ${i} adj 应=邻格雷+事件数`);
+        // 原料与出口不是特殊格：它们存在不影响邻居数字（暴力重算已覆盖），
+        // 且它们自身的 adj 也按同一规则计算
+        if (around.some((n) => cells[n].event) && !around.some((n) => cells[n].mine) && c.adj > 0) eventOnlyNumber++;
+      }
+      assert.equal(cells[exit].event, null);
+    }
+  }
+  assert.ok(eventOnlyNumber > 0, '应存在仅由事件贡献的数字格');
+  assert.ok(firstNeighborEvent > 0, '首击邻域应允许出现事件（不再必 0）');
+});
+
+test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳定，连锁不耗额外体力；v2 首击 adj>0 时单格', () => {
   const cfg = CONFIG.floors[1];
-  const { cells, exit } = generateBoard(cfg, SEED, FIRST);
+  // v2 首击 adj=邻格事件数，常>0 → 连锁机制改用首击恰为 0 的 seed 验证
+  let zeroSeed = -1;
+  for (let seed = 1; seed <= 300; seed++) {
+    if (generateBoard(cfg, seed, FIRST).cells[FIRST].adj === 0) { zeroSeed = seed; break; }
+  }
+  assert.ok(zeroSeed > 0, '应找到首击 adj=0 的 seed');
+  const { cells, exit } = generateBoard(cfg, zeroSeed, FIRST);
   const chain = revealChain(cells, cfg.width, cfg.height, FIRST);
   assert.equal(chain[0], FIRST);
   assert.ok(chain.length > 1);
@@ -116,13 +157,23 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
   const numberIndex = chain.find((i) => cells[i].adj > 0);
   assert.deepEqual(revealChain(cells, cfg.width, cfg.height, numberIndex), [numberIndex]);
 
-  const run = createRun({ wish: 'fun', seed: SEED });
+  const run = createRun({ wish: 'fun', seed: zeroSeed });
   const { state, effects } = scan(run, FIRST);
   const eventStamina = effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0);
   assert.equal(state.stamina, run.stamina - 1 + eventStamina);
   const reveals = effects.find((e) => e.type === 'reveals');
   assert.deepEqual(reveals.indices, chain);
   assert.ok(!chain.includes(exit) || state.status === 'extract-ready');
+
+  // 首击 adj>0（邻域有事件）时：只揭首击格本身，不连锁
+  const board2 = generateBoard(cfg, SEED, FIRST);
+  if (board2.cells[FIRST].adj > 0) {
+    const run2 = createRun({ wish: 'fun', seed: SEED });
+    const r2 = scan(run2, FIRST);
+    const reveals2 = r2.effects.find((e) => e.type === 'reveals');
+    assert.deepEqual(reveals2.indices, [FIRST]);
+    assert.equal(r2.state.stamina, run2.stamina - 1);
+  }
 });
 
 test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 carried→stored', () => {
@@ -141,7 +192,7 @@ test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 c
   const { cells, exit } = first.state.board;
   const safe = cells.findIndex((c, i) => {
     if (c.mine || c.revealed || i === exit) return false;
-    const chain = revealChain(cells, 8, 8, i);
+    const chain = revealChain(cells, CONFIG.floors[1].width, CONFIG.floors[1].height, i);
     return !chain.includes(exit) && !chain.some((j) => cells[j].event);
   });
   assert.ok(safe >= 0);
@@ -207,7 +258,7 @@ test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留
   assert.deepEqual(down.state.carried, { water: 0, stardust: 0 });
   assert.equal(down.state.board.cells, null);
   assert.equal(down.state.status, 'diving');
-  assert.equal(down.state.board.width, 10);
+  assert.equal(down.state.board.width, CONFIG.floors[2].width);
   const tooDeep = applyAction({ ...atExit.state, floor: 2 }, { type: 'descend' });
   assert.equal(tooDeep.effects[0].type, 'rejected');
   const leave = applyAction(atExit.state, { type: 'extract' });
@@ -353,7 +404,7 @@ test('⑫ save clamp：shield 99→3、stamina -5→0、carried 负→0；非法
 test('⑬ save 真实续玩：createRun+多次 applyAction 后 roundtrip，恢复后可继续 scan 且结果一致', () => {
   const run = openedRun();
   const safe = run.board.cells.findIndex((c, i) => !c.mine && !c.revealed && i !== run.board.exit
-    && !revealChain(run.board.cells, 8, 8, i).includes(run.board.exit));
+    && !revealChain(run.board.cells, CONFIG.floors[1].width, CONFIG.floors[1].height, i).includes(run.board.exit));
   assert.ok(safe >= 0);
   const restored = deserialize(serialize({ scene: 'dive', run })).run;
   assert.equal(restored.rngState, run.rngState);
@@ -599,7 +650,9 @@ test('⑳ 事件布置：互斥占格、数量符合 config、随机不重复、
   for (let seed = 1; seed <= 30; seed++) {
     for (const floor of [1, 2]) {
       const cfg = CONFIG.floors[floor];
-      const { cells, exit } = generateBoard(cfg, seed, floor === 1 ? FIRST : 55);
+      const first = floor === 1 ? FIRST : 55;
+      const { cells, exit } = generateBoard(cfg, seed, first);
+      assert.equal(cells[first].event, null, '首击格本身不布置事件');
       const eventCells = cells.map((c, i) => ({ c, i })).filter(({ c }) => c.event !== null);
       assert.equal(eventCells.length, cfg.eventCount);
       const ids = eventCells.map(({ c }) => c.event);
@@ -658,4 +711,191 @@ test('㉒ drink −3 体力可致耗尽紧急传送（仍存料进结算）', ()
   assert.ok(effects.some((e) => e.type === 'emergency'));
   const ev = effects.find((e) => e.type === 'event' && e.id === 'drink');
   assert.equal(ev.delta.choice, 3);
+});
+
+// ---------- V2-A：probe / flag / 新数字语义 ----------
+
+function probe(state, index) {
+  return applyAction(state, { type: 'probe', index });
+}
+
+function flag(state, index) {
+  return applyAction(state, { type: 'flag', index });
+}
+
+test('㉔ probe 雷：耗 1 体力、known+probed、不扣护盾不致死、revealed=false、known 雷 scan 拒绝', () => {
+  const run = openedRun();
+  const mineIndex = run.board.cells.findIndex((c) => c.mine);
+  const lowShield = { ...run, shield: 1 };
+  const { state, effects } = probe(lowShield, mineIndex);
+  assert.equal(state.stamina, run.stamina - CONFIG.probeCost);
+  assert.equal(state.shield, 1, 'probe 雷不扣护盾');
+  assert.equal(state.status, 'diving', 'probe 雷不致死');
+  const c = state.board.cells[mineIndex];
+  assert.equal(c.known, true);
+  assert.equal(c.probed, true);
+  assert.equal(c.revealed, false);
+  const pe = effects.find((e) => e.type === 'probe');
+  assert.deepEqual(pe, { type: 'probe', index: mineIndex, kind: 'mine' });
+  assert.ok(!effects.some((e) => e.type === 'mine' || e.type === 'death'));
+  const denied = scan(state, mineIndex);
+  assert.equal(denied.state, state);
+  assert.equal(denied.effects[0].type, 'rejected');
+  assert.equal(denied.effects[0].reason, 'already-open');
+});
+
+test('㉕ probe 事件：probed 认出种类但未触发（stamina/shield/carried 不变）revealed=false；之后 scan 才触发', () => {
+  const run = openedRun();
+  const { cells } = run.board;
+  let t = cells.findIndex((c, i) => c.event && !c.revealed && c.adj > 0);
+  if (t < 0) t = cells.findIndex((c) => c.event && !c.revealed);
+  assert.ok(t >= 0, '应存在未揭示事件格');
+  const eventId = cells[t].event;
+  const { state, effects } = probe(run, t);
+  assert.equal(state.stamina, run.stamina - CONFIG.probeCost);
+  assert.equal(state.shield, run.shield);
+  assert.deepEqual(state.carried, run.carried);
+  assert.deepEqual(state.stored, run.stored);
+  assert.equal(state.interference, run.interference);
+  assert.equal(state.status, 'diving');
+  const c = state.board.cells[t];
+  assert.equal(c.probed, true);
+  assert.equal(c.revealed, false, 'probe 事件不翻开');
+  assert.equal(c.event, eventId);
+  const pe = effects.find((e) => e.type === 'probe');
+  assert.equal(pe.kind, 'event');
+  assert.equal(pe.event, eventId);
+  assert.ok(!effects.some((e) => e.type === 'event'), 'probe 不触发事件效果');
+  assert.deepEqual(terrain(state.board.cells), terrain(cells));
+  // 已 probed 的事件再 scan → 正常触发
+  const after = scan(state, t);
+  assert.ok(after.effects.some((e) => e.type === 'event' && e.id === eventId && e.index === t));
+  assert.equal(after.state.board.cells[t].revealed, true);
+  assert.equal(after.state.stamina, state.stamina - 1 + (after.effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0)));
+});
+
+test('㉖ probe 安全格：单格翻开不连锁；原料格拾取；出口格直接 extract-ready+转账', () => {
+  const run = openedRun();
+  const { cells, exit, width, height } = run.board;
+  const t = cells.findIndex((c, i) => !c.mine && !c.event && !c.revealed && i !== exit && !c.content);
+  assert.ok(t >= 0);
+  const beforeRevealed = cells.map((c) => c.revealed);
+  const { state, effects } = probe(run, t);
+  assert.equal(state.board.cells[t].revealed, true);
+  assert.equal(state.board.cells[t].probed, true);
+  for (let i = 0; i < cells.length; i++) {
+    if (i !== t) assert.equal(state.board.cells[i].revealed, beforeRevealed[i], `probe 不应连锁揭示 ${i}`);
+  }
+  assert.ok(!effects.some((e) => e.type === 'reveals'), 'probe 无连锁 reveals 演出');
+  assert.equal(effects.find((e) => e.type === 'probe').kind, 'safe');
+  assert.equal(state.stamina, run.stamina - 1);
+
+  const res = state.board.cells.findIndex((c, i) => c.content && !c.revealed && !c.picked);
+  assert.ok(res >= 0, '应存在未拾取原料格');
+  const content = state.board.cells[res].content;
+  const got = probe(state, res);
+  assert.equal(got.state.board.cells[res].picked, true);
+  assert.equal(got.state.board.cells[res].revealed, true);
+  assert.equal(got.state.carried[content.type], state.carried[content.type] + content.amount);
+  assert.ok(got.effects.some((e) => e.type === 'pickup' && e.index === res && e.amount === content.amount));
+
+  const atExit = probe(got.state, exit);
+  assert.equal(atExit.state.status, 'extract-ready');
+  assert.equal(atExit.state.board.cells[exit].revealed, true);
+  assert.equal(atExit.state.board.cells[exit].probed, true);
+  assert.deepEqual(atExit.state.carried, { water: 0, stardust: 0 });
+  assert.equal(atExit.state.stored.water, got.state.stored.water + got.state.carried.water);
+  assert.ok(atExit.effects.some((e) => e.type === 'exit'));
+  assert.ok(atExit.effects.some((e) => e.type === 'deposit'));
+  // 已 revealed 格再 probe 拒绝
+  assert.equal(probe(atExit.state, t).effects[0].type, 'rejected');
+  assert.equal(probe({ ...run, stamina: 0 }, t).effects[0].reason, 'no-stamina');
+});
+
+test('㉗ probe 耗 1 不受 interference 加费也不耗干扰次数；probe 耗到 0 同样紧急撤离', () => {
+  const run = openedRun();
+  const [t] = singleScanTargets(run, 1);
+  const jammed = { ...run, stamina: 20, interference: { extra: 1, remaining: 3 } };
+  const p = probe(jammed, t);
+  assert.equal(p.state.stamina, 19, 'probe 固定耗 1');
+  assert.deepEqual(p.state.interference, { extra: 1, remaining: 3 }, 'probe 不消耗干扰次数');
+  const s = scan(p.state, singleScanTargets(p.state, 1)[0]);
+  assert.equal(s.state.stamina, 17, 'scan 仍加费');
+  assert.deepEqual(s.state.interference, { extra: 1, remaining: 2 });
+
+  const loaded = { ...run, stamina: 1, carried: { water: 12, stardust: 1 } };
+  const safe = run.board.cells.findIndex((c, i) => !c.mine && !c.event && !c.revealed && i !== run.board.exit);
+  const em = probe(loaded, safe);
+  assert.equal(em.state.stamina, 0);
+  assert.equal(em.state.status, 'emergency');
+  assert.deepEqual(em.state.carried, { water: 0, stardust: 0 });
+  assert.ok(em.state.stored.water >= run.stored.water + 12);
+  assert.ok(em.effects.some((e) => e.type === 'emergency'));
+  assert.ok(em.effects.some((e) => e.type === 'deposit'));
+});
+
+test('㉘ flag：切换 flagged、不耗体力、不改逻辑字段、已开格拒绝、标记不影响 scan', () => {
+  const run = openedRun();
+  const t = run.board.cells.findIndex((c, i) => !c.revealed && i !== run.board.exit);
+  const on = flag(run, t);
+  assert.equal(on.state.board.cells[t].flagged, true);
+  assert.equal(on.state.stamina, run.stamina, 'flag 不耗体力');
+  assert.deepEqual(on.effects, [{ type: 'flag', index: t, on: true }]);
+  for (let i = 0; i < run.board.cells.length; i++) {
+    const a = on.state.board.cells[i];
+    const b = run.board.cells[i];
+    assert.deepEqual([a.mine, a.adj, a.revealed, a.known, a.probed, a.picked, a.event, a.content],
+      [b.mine, b.adj, b.revealed, b.known, b.probed, b.picked, b.event, b.content]);
+  }
+  const off = flag(on.state, t);
+  assert.equal(off.state.board.cells[t].flagged, false);
+  assert.deepEqual(off.effects, [{ type: 'flag', index: t, on: false }]);
+  const revealedIndex = run.board.cells.findIndex((c) => c.revealed);
+  assert.equal(flag(run, revealedIndex).effects[0].type, 'rejected');
+  assert.equal(flag(createRun({ wish: 'fun', seed: SEED }), 0).effects[0].reason, 'no-board');
+  // 标记过的安全格仍可正常 scan（flag 无逻辑效果）
+  const safe = run.board.cells.findIndex((c, i) => !c.mine && !c.event && !c.revealed && i !== run.board.exit && c.adj > 0);
+  const flagged = flag(run, safe).state;
+  const scanned = scan(flagged, safe);
+  assert.equal(scanned.effects[0].type, 'reveals');
+  assert.equal(scanned.state.board.cells[safe].revealed, true);
+});
+
+test('㉙ save v2：probed/flagged/known roundtrip；旧档缺字段默认 false 向后兼容', () => {
+  let run = openedRun();
+  const mineIndex = run.board.cells.findIndex((c) => c.mine);
+  run = probe(run, mineIndex).state;
+  const hidden = run.board.cells.findIndex((c, i) => !c.revealed && i !== mineIndex);
+  run = flag(run, hidden).state;
+  assert.ok(run.board.cells.some((c) => c.probed));
+  assert.ok(run.board.cells.some((c) => c.flagged));
+  const back = deserialize(serialize({ scene: 'dive', run }));
+  assert.equal(validate(back), true);
+  assert.deepEqual(back.run, JSON.parse(JSON.stringify(run)));
+  assert.equal(back.run.board.cells[mineIndex].known, true);
+  assert.equal(back.run.board.cells[mineIndex].probed, true);
+  assert.equal(back.run.board.cells[hidden].flagged, true);
+  // 旧版存档（无 probed/flagged 字段）→ 缺省 false，仍可校验续玩
+  const legacy = {
+    version: SAVE_VERSION,
+    scene: 'dive',
+    savedAt: 1,
+    run: {
+      ...run,
+      board: {
+        ...run.board,
+        cells: run.board.cells.map((c) => {
+          const { probed: _p, flagged: _f, ...rest } = c;
+          return rest;
+        }),
+      },
+    },
+  };
+  const restored = deserialize(legacy);
+  assert.ok(restored, '旧档应可恢复');
+  assert.equal(validate(restored), true);
+  for (const c of restored.run.board.cells) {
+    assert.equal(c.probed, false);
+    assert.equal(c.flagged, false);
+  }
 });

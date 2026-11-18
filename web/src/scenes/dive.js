@@ -1,5 +1,6 @@
 import { applyAction } from '../core/rules.js';
 import { EVENTS } from '../core/events.js';
+import { CONFIG } from '../core/config.js';
 import { pointToCell } from '../engine/input.js';
 import { bake, get, spr } from '../engine/sprites.js';
 import { easeOutBack } from '../engine/fx.js';
@@ -7,6 +8,7 @@ import { easeOutBack } from '../engine/fx.js';
 const CELL = 16;
 const FLIP_TIME = 0.12;
 const POP_TIME = 0.9;
+const FLAG_POP_TIME = 0.45;
 const TOAST_TIME = 1.5;
 const RESOURCE_LABEL = { water: '水', stardust: '星尘' };
 const RESOURCE_UNIT = { water: 'ml', stardust: 'g' };
@@ -25,6 +27,10 @@ let desat = 0;
 let desatTarget = 0;
 let exitRing = null;
 let eventPops = [];
+let flagPops = [];
+let glowT = 0;
+let mode = 'scan';
+let keyHandler = null;
 let toastTimer = null;
 let toastEl = null;
 
@@ -72,17 +78,42 @@ function drawOpen(g, cell, index, exit, x, y) {
     g.fillStyle = kind === 'debuff' ? '#ff6b6b' : kind === 'random' ? '#f2c14e' : '#7ee787';
     g.fillRect(x + 12, y + 1, 3, 3);
   }
+  if (cell.probed) {
+    g.fillStyle = '#57e6d9';
+    g.fillRect(x + 13, y + 13, 2, 2);
+  }
 }
 
 function drawCell(g, cell, index, exit, layout) {
   const x = (index % layout.width) * CELL;
   const y = Math.floor(index / layout.width) * CELL;
-  if (cell.known) {
+  // 踩过的雷：焦黑雷贴图，直接终态
+  if (cell.known && cell.revealed) {
     spr(g, get('mine'), x, y);
     return;
   }
   // 逻辑已 revealed 但演出未播到 → 仍画未开，这是连锁错峰的视觉覆盖层
   if (!cell.revealed || !shownRevealed.has(index)) {
+    if (cell.flagged) {
+      spr(g, get('hidden'), x, y);
+      spr(g, get('flag'), x, y);
+      return;
+    }
+    if (cell.known) {
+      spr(g, get('mine'), x, y);
+      if (cell.probed) spr(g, get('probeCheck'), x + 9, y + 10);
+      return;
+    }
+    if (cell.probed && cell.event) {
+      // 认出但未挖的事件：图标 + 呼吸金边，提示这是可挖目标
+      spr(g, get(EVENTS[cell.event].icon), x, y);
+      g.globalAlpha = 0.55 + 0.35 * Math.sin(glowT * 4);
+      g.strokeStyle = '#f2c14e';
+      g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      g.globalAlpha = 1;
+      return;
+    }
     spr(g, get('hidden'), x, y);
     return;
   }
@@ -214,6 +245,102 @@ function markFx(ctx, indices) {
   ctx.audio.playChain(0);
 }
 
+function aftermath(ctx, state, effects, clicked, delay, waves, locked) {
+  const width = state.board.width;
+  const pickups = effects.filter((e) => e.type === 'pickup');
+  const markGroups = effects.filter((e) => e.type === 'mine-mark');
+  const eventEffects = effects.filter((e) => e.type === 'event');
+  const mine = effects.find((e) => e.type === 'mine');
+  const death = effects.find((e) => e.type === 'death');
+  const exitEffect = effects.find((e) => e.type === 'exit');
+
+  for (const pickup of pickups) {
+    const wave = waves.find((w) => w.indices.includes(pickup.index));
+    const at = wave ? wave.start + wave.indices.indexOf(pickup.index) * wave.interval + 0.12 : delay + 0.12;
+    queueTimers.push(ctx.scheduler.after(at, () => pickupFx(ctx, pickup)));
+    delay = Math.max(delay, at + 0.4);
+  }
+  for (const marks of markGroups) {
+    queueTimers.push(ctx.scheduler.after(delay, () => markFx(ctx, marks.indices)));
+    delay += 0.25;
+  }
+  if (eventEffects.length > 0) {
+    ctx.input.lock();
+    locked = true;
+    eventEffects.forEach((ev, k) => {
+      queueTimers.push(ctx.scheduler.after(delay + k * 0.35, () => eventFx(ctx, ev)));
+    });
+    delay += eventEffects.length * 0.35 + 0.5;
+  }
+
+  if (mine) {
+    ctx.audio.play('mine');
+    shownRevealed.add(mine.index);
+    lastRevealedIndex = mine.index;
+    swing(ctx);
+    ctx.fx.hitStop(3);
+    ctx.fx.addTrauma(0.6);
+    vignette = 0.35;
+    const c = cellCenter(mine.index, width);
+    ctx.particles.debris(c.x, c.y);
+    ctx.fx.spawnFloatText(c.x, c.y - 4, '−1 护盾', '#ff6b6b', { size: 7 });
+    delay = Math.max(delay, 0.5);
+  }
+
+  if (death) {
+    ctx.audio.play('death');
+    ctx.fx.addTrauma(0.9);
+    desatTarget = 1;
+    vignette = 0.6;
+    const c = cellCenter(mine.index, width);
+    let at = 0.3;
+    for (const [resource, amount] of Object.entries(death.lost)) {
+      if (amount <= 0) continue;
+      const text = `${RESOURCE_LABEL[resource]} −${amount}${RESOURCE_UNIT[resource]}`;
+      queueTimers.push(ctx.scheduler.after(at, () => {
+        ctx.fx.spawnFloatText(c.x, c.y, text, '#ef5da8', { size: 6, life: 1, fall: true });
+      }));
+      at += 0.25;
+    }
+    delay = Math.max(delay, at + 0.6);
+  }
+
+  if (exitEffect) {
+    const c = cellCenter(exitEffect.index, width);
+    queueTimers.push(ctx.scheduler.after(delay, () => {
+      ctx.audio.play('exit');
+      exitRing = { index: exitEffect.index, age: 0 };
+      ctx.fx.spawnFloatText(c.x, c.y - 4, '已存好', '#f2c14e', { size: 7, life: 0.9 });
+      ctx.particles.confetti(c.x, c.y);
+    }));
+    delay += 0.6;
+  }
+
+  if (effects.some((e) => e.type === 'emergency')) {
+    ctx.fx.spawnFloatText(clicked.x, clicked.y - 4, '体力耗尽·紧急传送', '#f2c14e', { size: 6, life: 0.9 });
+    delay = Math.max(delay, 0.6);
+  }
+
+  let target = null;
+  if (state.status === 'extract-ready') target = 'extract';
+  else if (state.status === 'dead' || state.status === 'emergency') target = 'mix';
+  if (target) {
+    ctx.input.lock();
+    transitionTimer = ctx.scheduler.after(delay + 0.05, () => {
+      transitionTimer = null;
+      ctx.goto(target);
+    });
+  } else if (locked) {
+    queueTimers.push(ctx.scheduler.after(delay, () => ctx.input.unlock()));
+  }
+}
+
+function selectMode(ctx, next) {
+  mode = next;
+  ctx.audio.play('uiClick');
+  ctx.hud.setMode(mode, (m) => selectMode(ctx, m));
+}
+
 export const dive = {
   enter(ctx) {
     bake();
@@ -228,6 +355,9 @@ export const dive = {
     desatTarget = 0;
     exitRing = null;
     eventPops = [];
+    flagPops = [];
+    glowT = 0;
+    mode = 'scan';
     toastTimer = null;
     toastEl = null;
     const cells = ctx.run.board.cells;
@@ -241,10 +371,18 @@ export const dive = {
     fitCanvas(ctx);
     resizeHandler = () => fitCanvas(ctx);
     window.addEventListener('resize', resizeHandler);
+    keyHandler = (event) => {
+      if (event.repeat || !ctx.run || ctx.run.status !== 'diving') return;
+      const k = event.key.toLowerCase();
+      const map = { 1: 'scan', s: 'scan', 2: 'probe', p: 'probe', 3: 'flag', f: 'flag' };
+      if (map[k]) selectMode(ctx, map[k]);
+    };
+    window.addEventListener('keydown', keyHandler);
     ctx.hud.update(ctx.run);
+    ctx.hud.setMode(mode, (m) => selectMode(ctx, m));
     const tip = document.createElement('p');
     tip.className = 'hint';
-    tip.textContent = '点任意格开始探索（首击必安全）。每次扫描消耗 1 体力，找到出口即可存料并选择撤离或下潜。格上彩色小标是随机事件，只给资源或信息，绝不改数字与雷位。';
+    tip.textContent = '数字=周围雷+事件总数。挖=扫描(0连锁)；探=安全认清一格；旗=标记疑似。推出特殊格后探明再决定挖不挖。右键随时插旗，快捷键 1/2/3。';
     ctx.panel.append(tip);
   },
   exit(ctx) {
@@ -252,6 +390,12 @@ export const dive = {
       window.removeEventListener('resize', resizeHandler);
       resizeHandler = null;
     }
+    if (keyHandler) {
+      window.removeEventListener('keydown', keyHandler);
+      keyHandler = null;
+    }
+    ctx.hud.clearMode();
+    mode = 'scan';
     for (const id of queueTimers) ctx.scheduler.cancel(id);
     queueTimers = [];
     if (transitionTimer !== null) {
@@ -271,6 +415,8 @@ export const dive = {
       toastEl = null;
     }
     eventPops = [];
+    flagPops = [];
+    glowT = 0;
     shownRevealed.clear();
     flipAnims.clear();
     vignette = 0;
@@ -282,6 +428,7 @@ export const dive = {
     ctx.input.unlock();
   },
   update(ctx, dt) {
+    glowT += dt;
     for (const [index, age] of flipAnims) {
       if (age + dt >= FLIP_TIME) flipAnims.delete(index);
       else flipAnims.set(index, age + dt);
@@ -294,6 +441,8 @@ export const dive = {
     }
     for (const pop of eventPops) pop.age += dt;
     eventPops = eventPops.filter((pop) => pop.age < POP_TIME);
+    for (const pop of flagPops) pop.age += dt;
+    flagPops = flagPops.filter((pop) => pop.age < FLAG_POP_TIME);
   },
   render(ctx) {
     const run = ctx.run;
@@ -320,6 +469,16 @@ export const dive = {
       g.globalAlpha = p < 0.65 ? 1 : (1 - p) / 0.35;
       g.imageSmoothingEnabled = false;
       g.drawImage(pop.sprite, Math.round(x - size / 2), Math.round(y - size / 2 - p * 6), Math.round(size), Math.round(size));
+      g.globalAlpha = 1;
+    }
+    for (const pop of flagPops) {
+      const p = Math.min(1, pop.age / FLAG_POP_TIME);
+      const { x, y } = cellCenter(pop.index, layout.width);
+      const scale = pop.on ? 1 + 0.6 * easeOutBack(Math.min(1, p * 2)) : Math.max(0.2, 1 - p);
+      const size = CELL * scale;
+      g.globalAlpha = 1 - p;
+      g.imageSmoothingEnabled = false;
+      g.drawImage(get('flag'), Math.round(x - size / 2), Math.round(y - size / 2 - (pop.on ? 0 : p * 4)), Math.round(size), Math.round(size));
       g.globalAlpha = 1;
     }
     if (exitRing) {
@@ -357,23 +516,60 @@ export const dive = {
     if (!run || run.status !== 'diving') return;
     const index = pointToCell(point, layoutFor(ctx));
     if (index < 0) return;
-    const { state, effects } = applyAction(run, { type: 'scan', index });
+    const action = point.button === 2 ? 'flag' : mode;
+    const clicked = cellCenter(index, run.board.width);
+    if (action === 'probe' && run.board.cells) {
+      const c = run.board.cells[index];
+      if (c.revealed || c.known || c.probed) {
+        ctx.fx.spawnFloatText(clicked.x, clicked.y - 2, '已认出，无需再探', '#8b81a8', { size: 5, life: 0.7 });
+        return;
+      }
+    }
+    const { state, effects } = applyAction(run, { type: action, index });
     if (effects.some((e) => e.type === 'rejected')) return;
     ctx.commitRun(state);
     ctx.hud.update(state);
+
+    if (action === 'flag') {
+      const flag = effects.find((e) => e.type === 'flag');
+      ctx.audio.play('flag');
+      flagPops.push({ index, age: 0, on: flag.on });
+      ctx.fx.spawnFloatText(clicked.x, clicked.y - 2, flag.on ? '标记' : '取消标记', '#ef5da8', { size: 5, life: 0.5 });
+      return;
+    }
+
+    if (action === 'probe') {
+      const probe = effects.find((e) => e.type === 'probe');
+      ctx.audio.play('probe');
+      ctx.fx.spawnFloatText(clicked.x, clicked.y + 6, `体力−${CONFIG.probeCost}`, '#8b81a8', { size: 5, life: 0.5, rise: 8 });
+      let delay = 0.2;
+      if (probe.kind === 'mine') {
+        ctx.audio.play('probeMine');
+        eventPops.push({ index, sprite: get('mine'), age: 0 });
+        ctx.fx.spawnFloatText(clicked.x, clicked.y - 4, '认出雷！', '#57e6d9', { size: 6, life: 0.8 });
+        delay = 0.35;
+      } else if (probe.kind === 'event') {
+        ctx.audio.play('eventUp');
+        const def = EVENTS[probe.event];
+        eventPops.push({ index, sprite: get(def.icon), age: 0 });
+        showToast(ctx, `认出 ${def.name} · 挖开才触发`, 'buff');
+        delay = 0.35;
+      } else {
+        shownRevealed.add(index);
+        flipAnims.set(index, 0);
+        lastRevealedIndex = index;
+        swing(ctx);
+        ctx.particles.dust(clicked.x, clicked.y + 6);
+      }
+      aftermath(ctx, state, effects, clicked, delay, [], false);
+      return;
+    }
+
     ctx.audio.play('dig');
-    const width = state.board.width;
-    const clicked = cellCenter(index, width);
     const jam = run.interference && run.interference.remaining > 0 ? run.interference.extra : 0;
     ctx.fx.spawnFloatText(clicked.x, clicked.y + 6, `体力−${1 + jam}`, '#8b81a8', { size: 5, life: 0.5, rise: 8 });
 
     const revealGroups = effects.filter((e) => e.type === 'reveals');
-    const mine = effects.find((e) => e.type === 'mine');
-    const death = effects.find((e) => e.type === 'death');
-    const exitEffect = effects.find((e) => e.type === 'exit');
-    const pickups = effects.filter((e) => e.type === 'pickup');
-    const markGroups = effects.filter((e) => e.type === 'mine-mark');
-    const eventEffects = effects.filter((e) => e.type === 'event');
     let delay = 0;
     let locked = false;
     const waves = [];
@@ -392,85 +588,6 @@ export const dive = {
       waves.push({ indices: group.indices, start, interval });
       delay = start + (n - 1) * interval + 0.15;
     }
-    for (const pickup of pickups) {
-      const wave = waves.find((w) => w.indices.includes(pickup.index));
-      if (!wave) continue;
-      const at = wave.start + wave.indices.indexOf(pickup.index) * wave.interval + 0.12;
-      queueTimers.push(ctx.scheduler.after(at, () => pickupFx(ctx, pickup)));
-      delay = Math.max(delay, at + 0.4);
-    }
-    for (const marks of markGroups) {
-      queueTimers.push(ctx.scheduler.after(delay, () => markFx(ctx, marks.indices)));
-      delay += 0.25;
-    }
-    if (eventEffects.length > 0) {
-      ctx.input.lock();
-      locked = true;
-      eventEffects.forEach((ev, k) => {
-        queueTimers.push(ctx.scheduler.after(delay + k * 0.35, () => eventFx(ctx, ev)));
-      });
-      delay += eventEffects.length * 0.35 + 0.5;
-    }
-
-    if (mine) {
-      ctx.audio.play('mine');
-      shownRevealed.add(mine.index);
-      lastRevealedIndex = mine.index;
-      swing(ctx);
-      ctx.fx.hitStop(3);
-      ctx.fx.addTrauma(0.6);
-      vignette = 0.35;
-      const c = cellCenter(mine.index, width);
-      ctx.particles.debris(c.x, c.y);
-      ctx.fx.spawnFloatText(c.x, c.y - 4, '−1 护盾', '#ff6b6b', { size: 7 });
-      delay = Math.max(delay, 0.5);
-    }
-
-    if (death) {
-      ctx.audio.play('death');
-      ctx.fx.addTrauma(0.9);
-      desatTarget = 1;
-      vignette = 0.6;
-      const c = cellCenter(mine.index, width);
-      let at = 0.3;
-      for (const [resource, amount] of Object.entries(death.lost)) {
-        if (amount <= 0) continue;
-        const text = `${RESOURCE_LABEL[resource]} −${amount}${RESOURCE_UNIT[resource]}`;
-        queueTimers.push(ctx.scheduler.after(at, () => {
-          ctx.fx.spawnFloatText(c.x, c.y, text, '#ef5da8', { size: 6, life: 1, fall: true });
-        }));
-        at += 0.25;
-      }
-      delay = Math.max(delay, at + 0.6);
-    }
-
-    if (exitEffect) {
-      const c = cellCenter(exitEffect.index, width);
-      queueTimers.push(ctx.scheduler.after(delay, () => {
-        ctx.audio.play('exit');
-        exitRing = { index: exitEffect.index, age: 0 };
-        ctx.fx.spawnFloatText(c.x, c.y - 4, '已存好', '#f2c14e', { size: 7, life: 0.9 });
-        ctx.particles.confetti(c.x, c.y);
-      }));
-      delay += 0.6;
-    }
-
-    if (effects.some((e) => e.type === 'emergency')) {
-      ctx.fx.spawnFloatText(clicked.x, clicked.y - 4, '体力耗尽·紧急传送', '#f2c14e', { size: 6, life: 0.9 });
-      delay = Math.max(delay, 0.6);
-    }
-
-    let target = null;
-    if (state.status === 'extract-ready') target = 'extract';
-    else if (state.status === 'dead' || state.status === 'emergency') target = 'mix';
-    if (target) {
-      ctx.input.lock();
-      transitionTimer = ctx.scheduler.after(delay + 0.05, () => {
-        transitionTimer = null;
-        ctx.goto(target);
-      });
-    } else if (locked) {
-      queueTimers.push(ctx.scheduler.after(delay, () => ctx.input.unlock()));
-    }
+    aftermath(ctx, state, effects, clicked, delay, waves, locked);
   },
 };

@@ -31,8 +31,31 @@ function badge(text, kind) {
 }
 
 export function createHud(root) {
-  return {
+  let mode = null;
+  let onSelect = null;
+  let lastRun = null;
+
+  function modeRow() {
+    const row = document.createElement('div');
+    row.className = 'hud-line hud-modes';
+    for (const [key, label] of [['scan', '挖'], ['probe', '探'], ['flag', '旗']]) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `mode-btn${mode === key ? ' active' : ''}`;
+      btn.textContent = label;
+      btn.addEventListener('click', () => { if (onSelect) onSelect(key); });
+      row.append(btn);
+    }
+    const hint = document.createElement('span');
+    hint.className = 'mode-hint';
+    hint.textContent = '探=花1体力安全认清 · 旗=免费标记';
+    row.append(hint);
+    return row;
+  }
+
+  const hud = {
     update(run) {
+      lastRun = run;
       const { water, stardust } = CONFIG.recipe;
       const totalWater = run.stored.water + run.carried.water;
       const totalStardust = run.stored.stardust + run.carried.stardust;
@@ -68,7 +91,21 @@ export function createHud(root) {
       );
 
       root.append(stats, bars, store);
+      if (mode !== null) root.append(modeRow());
     },
-    clear() { root.replaceChildren(); },
+    setMode(next, handler) {
+      mode = next;
+      onSelect = handler;
+      if (lastRun) hud.update(lastRun);
+    },
+    clearMode() {
+      mode = null;
+      onSelect = null;
+    },
+    clear() {
+      lastRun = null;
+      root.replaceChildren();
+    },
   };
+  return hud;
 }
