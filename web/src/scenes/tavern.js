@@ -5,7 +5,6 @@ import { sanitizeWarehouse } from '../core/warehouse.js';
 
 const LOGICAL_W = 160;
 const LOGICAL_H = 128;
-const COUNTDOWN = 10;
 
 const STARS = Array.from({ length: 24 }, (_, i) => ({
   x: (i * 67 + 13) % LOGICAL_W,
@@ -16,7 +15,6 @@ const STARS = Array.from({ length: 24 }, (_, i) => ({
 let elapsed = 0;
 let used = false;
 let phase = 'door';
-let timeoutTimer = null;
 let resizeHandler = null;
 let buttons = [];
 
@@ -42,15 +40,6 @@ function glassButton(ctx, label, sub, onClick) {
   return button;
 }
 
-function startCountdown(ctx, onTimeout) {
-  elapsed = 0;
-  if (timeoutTimer !== null) ctx.scheduler.cancel(timeoutTimer);
-  timeoutTimer = ctx.scheduler.after(COUNTDOWN, () => {
-    timeoutTimer = null;
-    onTimeout();
-  });
-}
-
 function buildPanel(ctx) {
   ctx.panel.replaceChildren();
   buttons = [];
@@ -64,7 +53,7 @@ function buildPanel(ctx) {
 
   if (phase === 'door') {
     const intro = document.createElement('p');
-    intro.textContent = '旅人，夜深了。推开这扇门，选一张愿望卡——先去矿区挖原料，再回吧台比划给调酒师看。';
+    intro.textContent = '旅人，夜深了。推开这扇门，选一张愿望卡——先去矿区挖原料，再回吧台比划给调酒师看。不计时，慢慢来。';
     ctx.panel.append(intro);
     const wrap = document.createElement('div');
     wrap.className = 'wish-wrap';
@@ -72,14 +61,13 @@ function buildPanel(ctx) {
     ctx.panel.append(wrap);
     const hint = document.createElement('p');
     hint.className = 'hint';
-    hint.textContent = '玩法：扫雷挖水与星尘 → 撤离回吧 → 用符号牌向调酒师比划你的愿望。它猜得越准、料越足，愿望实现得越完整。';
+    hint.textContent = '玩法：扫雷挖水与星尘 → 撤离回吧 → 用符号牌向调酒师比划你的愿望。它猜得越准、料越足，愿望实现得越完整。右上角「背包」随时看原料和用途。';
     ctx.panel.append(hint);
-    startCountdown(ctx, () => enterWishPhase(ctx));
     return;
   }
 
   const intro = document.createElement('p');
-  intro.textContent = '选一张愿望卡（10 秒）。它会被扣在吧台上——调酒师看不见，只能靠你比划。';
+  intro.textContent = '选一张愿望卡。它会被扣在吧台上——调酒师看不见，只能靠你比划。不计时，慢慢选。';
   ctx.panel.append(intro);
   const wrap = document.createElement('div');
   wrap.className = 'wish-wrap';
@@ -89,9 +77,8 @@ function buildPanel(ctx) {
   ctx.panel.append(wrap);
   const hint = document.createElement('p');
   hint.className = 'hint';
-  hint.textContent = '水在浅层就有，星尘只在更深处——星尘还能在吧台显影暗牌。超时默认「想家」。';
+  hint.textContent = '水在浅层就有，星尘只在更深处——星尘还能在吧台显影暗牌。';
   ctx.panel.append(hint);
-  startCountdown(ctx, () => choose(ctx, CHARADE_WISHES[0]));
 }
 
 function enterWishPhase(ctx) {
@@ -105,10 +92,6 @@ function choose(ctx, wish) {
   if (used) return;
   used = true;
   for (const b of buttons) b.disabled = true;
-  if (timeoutTimer !== null) {
-    ctx.scheduler.cancel(timeoutTimer);
-    timeoutTimer = null;
-  }
   ctx.audio.play('uiClick');
   const seed = ctx.debugSeed ?? (Date.now() >>> 0);
   ctx.commitRun(createRun({ wish: wish.id, seed }));
@@ -121,7 +104,6 @@ export const tavern = {
     elapsed = 0;
     used = false;
     phase = 'door';
-    timeoutTimer = null;
     buttons = [];
     ctx.canvas.style.display = 'block';
     fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
@@ -133,10 +115,6 @@ export const tavern = {
     if (resizeHandler) {
       window.removeEventListener('resize', resizeHandler);
       resizeHandler = null;
-    }
-    if (timeoutTimer !== null) {
-      ctx.scheduler.cancel(timeoutTimer);
-      timeoutTimer = null;
     }
     buttons = [];
     used = false;
@@ -169,28 +147,5 @@ export const tavern = {
     spr(g, get('barCounter'), 0, 72, 5);
     spr(g, get('shaker'), 24, 48, 2);
     pourGlass(g, 112, 46, 2, 0.6);
-
-    const remaining = Math.max(0, COUNTDOWN - elapsed);
-    const urgent = remaining <= 3;
-    const cx = 148;
-    const cy = 15;
-    g.lineWidth = 3;
-    g.strokeStyle = '#2c2444';
-    g.beginPath();
-    g.arc(cx, cy, 9, 0, Math.PI * 2);
-    g.stroke();
-    g.strokeStyle = urgent ? '#ff6b6b' : '#57e6d9';
-    g.beginPath();
-    g.arc(cx, cy, 9, -Math.PI / 2, -Math.PI / 2 + (remaining / COUNTDOWN) * Math.PI * 2);
-    g.stroke();
-    const jx = urgent ? Math.round(Math.random() * 2 - 1) : 0;
-    const jy = urgent ? Math.round(Math.random() * 2 - 1) : 0;
-    g.font = 'bold 9px monospace';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillStyle = '#120e1a';
-    g.fillText(String(Math.ceil(remaining)), cx + jx + 1, cy + jy + 1);
-    g.fillStyle = urgent ? '#ff6b6b' : '#d8d2e8';
-    g.fillText(String(Math.ceil(remaining)), cx + jx, cy + jy);
   },
 };

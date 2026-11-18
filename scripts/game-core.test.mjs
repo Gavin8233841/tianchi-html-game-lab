@@ -9,7 +9,7 @@ import { completion, discountedPrice } from '../web/src/core/recipe.js';
 import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
 import { EMPTY_WAREHOUSE, sanitizeWarehouse } from '../web/src/core/warehouse.js';
 import {
-  SYMBOLS, SYMBOL_IDS, CHARADE_WISHES, WISH_BY_ID, directionScore, interpret, moodFor,
+  SYMBOLS, SYMBOL_IDS, CHARADE_WISHES, WISH_BY_ID, FALLBACK_NAMES, directionScore, interpret, moodFor,
   reactionNotes, reactionLines, startBar, applyBarAction, availableMaterials, MATCH_CAP,
 } from '../web/src/core/charades.js';
 
@@ -1011,10 +1011,11 @@ test('㉞ interpret：直译表命中（与愿望无关）、乱组合 fallback�
   assert.equal(unrelated.drink, '岩浆浴');
   assert.equal(unrelated.mood, 'confused');
   const weird = interpret('home', ['star', 'heart', 'road']);
-  assert.equal(weird.drink, '未知混合物');
+  assert.ok(FALLBACK_NAMES.includes(weird.drink), `怪酒名应在名池: ${weird.drink}`);
+  assert.equal(interpret('home', ['road', 'heart', 'star']).drink, weird.drink, '同组合（乱序）同名');
   const empty = interpret('home', []);
   assert.ok(empty.text.includes('行为艺术'));
-  assert.equal(empty.drink, '未知混合物');
+  assert.equal(empty.drink, '行为艺术');
 });
 
 function rejected0(res) {

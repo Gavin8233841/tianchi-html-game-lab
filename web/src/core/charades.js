@@ -107,7 +107,17 @@ const COMBOS = {
   'star+water': { text: '星尘雨。张开嘴接。', drink: '星雨' },
 };
 
-const FALLBACK_DRINK = '未知混合物';
+// 乱组合的怪酒名：按组合键确定性选名（同组合永远同名，可记忆），空吧台=行为艺术
+export const FALLBACK_NAMES = [
+  '星尘误会', '调酒师的即兴', '第三只眼的盲区', '银河抽象派',
+  '微醺星云', '译不出的夜', '哎呀，星座', '错误答案，但好喝',
+];
+
+function hashKey(key) {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
 
 // 组合键统一按字母序归一，避免手写键序与 lookup 不一致
 const COMBO_TABLE = Object.fromEntries(
@@ -166,7 +176,8 @@ export function interpret(wishId, tableau) {
   const text = labels
     ? `它盯着你摆的「${labels}」，触手挠了挠头：「……这是艺术？」`
     : '它看着空荡荡的吧台，三只眼一起眨：「……行为艺术？」';
-  return { text, drink: FALLBACK_DRINK, mood: moodFor(direction) };
+  const drink = labels ? FALLBACK_NAMES[hashKey(key) % FALLBACK_NAMES.length] : '行为艺术';
+  return { text, drink, mood: moodFor(direction) };
 }
 
 export function availableMaterials(run, warehouse) {

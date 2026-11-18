@@ -16,6 +16,7 @@ const FLY_DURATION = 0.3;
 export function createFx() {
   let trauma = 0;
   let freeze = 0;
+  let paused = false;
   let floatCursor = 0;
   let flyCursor = 0;
   const floats = Array.from({ length: FLOAT_POOL }, () => ({ active: false, onDone: null }));
@@ -37,7 +38,10 @@ export function createFx() {
       freeze = Math.max(freeze, frames / 60);
     },
     isFrozen() {
-      return freeze > 0;
+      return freeze > 0 || paused;
+    },
+    setPaused(v) {
+      paused = v === true;
     },
     shakeOffset() {
       const s = trauma * trauma * MAX_AMP;

@@ -385,3 +385,59 @@ h2 {
 .sym-dict summary:hover { color: #8ff2e8; }
 .sym-dict p { margin: 4px 0; }
 .wish-hint { color: #f2c14e; }
+
+#backpack-btn {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 40;
+  padding: 6px 14px;
+  border: 1px solid #453a6b;
+  border-radius: 8px;
+  background: #241d38;
+  color: #57e6d9;
+  font-size: 14px;
+  cursor: pointer;
+}
+#backpack-btn:hover { background: #3a3157; color: #8ff2e8; }
+
+.backpack-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 14, 26, 0.78);
+}
+.backpack-overlay[hidden] { display: none; }
+.backpack-box {
+  width: min(440px, 92vw);
+  max-height: 82vh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #453a6b;
+  border-radius: 12px;
+  background: #1e1830;
+}
+.backpack-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.backpack-head strong { color: #f2c14e; font-size: 16px; }
+.backpack-head button {
+  padding: 6px 12px;
+  border: 1px solid #453a6b;
+  border-radius: 8px;
+  background: #241d38;
+  color: #d8d2e8;
+  font-size: 13px;
+  cursor: pointer;
+}
+.backpack-head button:hover { background: #3a3157; color: #ffffff; }
+.backpack-section { margin-top: 12px; padding-top: 8px; border-top: 1px solid #2c2444; }
+.backpack-title { color: #57e6d9; font-size: 13px; font-weight: bold; }
+.backpack-nums { margin: 4px 0; color: #d8d2e8; font-size: 15px; }
+.backpack-section p { margin: 4px 0; }
