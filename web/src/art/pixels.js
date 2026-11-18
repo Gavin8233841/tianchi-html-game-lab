@@ -322,6 +322,33 @@ const eventCorrode = [
   'bbbbbbbbbbbbbbbb',
 ];
 
+const flag = [
+  '................',
+  '.....oo.........',
+  '.....goooooo....',
+  '.....gffffffo...',
+  '.....gfDffffffo.',
+  '.....gfffffffffo',
+  '.....gffffffffo.',
+  '.....gffffffo...',
+  '.....goooooo....',
+  '.....go.........',
+  '.....go.........',
+  '.....go.........',
+  '.....go.........',
+  '....ooooo.......',
+  '...ooooooo......',
+  '................',
+];
+
+const probeCheck = [
+  '.....n',
+  '....nn',
+  'n..nn.',
+  'nnnn..',
+  '.nn...',
+];
+
 const bartender = [
   '....hhhh....',
   '...hhhhhh...',
@@ -403,6 +430,8 @@ export const PIXELS = {
   stardust,
   minerIdle,
   minerSwing,
+  flag,
+  probeCheck,
   eventSupply,
   eventRepair,
   eventCache,

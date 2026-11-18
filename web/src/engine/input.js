@@ -1,18 +1,30 @@
 export function createInput({ canvas, onPointer }) {
   let locked = false;
-  function handler(event) {
+  function toPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+  function down(event) {
     if (locked) return;
     event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
-    onPointer({ x, y });
+    onPointer({ ...toPoint(event), button: event.button, type: 'pointerdown' });
   }
-  canvas.addEventListener('pointerdown', handler);
+  // 右键旗标走 pointerdown(button=2)，这里只吞菜单，锁定期也吞，避免双触发
+  function menu(event) {
+    event.preventDefault();
+  }
+  canvas.addEventListener('pointerdown', down);
+  canvas.addEventListener('contextmenu', menu);
   return {
     lock() { locked = true; },
     unlock() { locked = false; },
-    destroy() { canvas.removeEventListener('pointerdown', handler); },
+    destroy() {
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('contextmenu', menu);
+    },
   };
 }
 
