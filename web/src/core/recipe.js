@@ -8,22 +8,3 @@ export function completion(stored) {
 export function discountedPrice(ratio) {
   return Math.round(CONFIG.recipe.basePrice * (1 - ratio));
 }
-
-export function surplusCoins(stored) {
-  const extraWater = Math.max(0, stored.water - CONFIG.recipe.water);
-  const extraStardust = Math.max(0, stored.stardust - CONFIG.recipe.stardust);
-  return extraWater * CONFIG.surplus.water + extraStardust * CONFIG.surplus.stardust;
-}
-
-export function settleRecipe(stored) {
-  const ratio = completion(stored);
-  return {
-    completion: ratio,
-    fulfilled: ratio >= 1,
-    price: discountedPrice(ratio),
-    surplusWater: Math.max(0, stored.water - CONFIG.recipe.water),
-    surplusStardust: Math.max(0, stored.stardust - CONFIG.recipe.stardust),
-    coins: surplusCoins(stored),
-    banked: false,
-  };
-}

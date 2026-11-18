@@ -25,7 +25,7 @@ export const extract = {
     const leave = document.createElement('button');
     leave.type = 'button';
     leave.textContent = '撤离回吧';
-    leave.addEventListener('click', () => act({ type: 'extract' }, 'mix'));
+    leave.addEventListener('click', () => act({ type: 'extract' }, 'bar'));
     ctx.panel.append(leave);
 
     if (ctx.run.floor < CONFIG.maxFloor) {

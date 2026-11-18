@@ -410,6 +410,123 @@ const shaker = [
   '..GGGGGG..',
 ];
 
+const symStar = [
+  '....dd....',
+  '....dd....',
+  '...dddd...',
+  'ddddDDdddd',
+  'ddddDDdddd',
+  '...dddd...',
+  '....dd....',
+  '....dd....',
+  '..........',
+  '..........',
+];
+
+const symHouse = [
+  '....mm....',
+  '...mmmm...',
+  '..mmmmmm..',
+  '.mmmmmmmm.',
+  'mmmmmmmmmm',
+  '.tttttttt.',
+  '.twwttctt.',
+  '.twwttctt.',
+  '.ttttttct.',
+  '..........',
+];
+
+const symHeart = [
+  '..........',
+  '.ff....ff.',
+  'fxffffffff',
+  'ffffffffff',
+  'ffffffffff',
+  '.ffffffff.',
+  '..ffffff..',
+  '...ffff...',
+  '....ff....',
+  '..........',
+];
+
+const symRoad = [
+  '....gg....',
+  '....gg....',
+  '...gddg...',
+  '...gddg...',
+  '..ggddgg..',
+  '..ggddgg..',
+  '.gggddggg.',
+  '.gggddggg.',
+  'ggggddgggg',
+  'ggggddgggg',
+];
+
+const symFire = [
+  '....m.....',
+  '...mm.....',
+  '...mmm....',
+  '..mmdm....',
+  '..mddmm...',
+  '.mddddm...',
+  '.mddDdm...',
+  '.mddDddm..',
+  '..mdddmm..',
+  '...mmm....',
+];
+
+const symWater = [
+  '....w.....',
+  '....w.....',
+  '...www....',
+  '...www....',
+  '..wwwww...',
+  '..wWwww...',
+  '.wwWwwww..',
+  '.wwwwwww..',
+  '..wwwww...',
+  '..........',
+];
+
+const symMoon = [
+  '...dddd...',
+  '..dddd....',
+  '.dddd.....',
+  '.ddd......',
+  'ddd.......',
+  'ddd.......',
+  '.ddd......',
+  '.dddd.....',
+  '..dddd....',
+  '...dddd...',
+];
+
+const symDoor = [
+  '.tttttttt.',
+  '.tCCCCCCt.',
+  '.tCCCCCCt.',
+  '.tCCCCCCt.',
+  '.tCCCCdCt.',
+  '.tCCCCCCt.',
+  '.tCCCCCCt.',
+  '.tCCCCCCt.',
+  '.tttttttt.',
+  '..........',
+];
+
+const cardBack = [
+  'pppppppppp',
+  'pppddddppp',
+  'ppdppppdpp',
+  'pppppppdpp',
+  'pppppddppp',
+  'ppppdppppp',
+  'ppppdppppp',
+  'pppppppppp',
+  'ppppdppppp',
+  'pppppppppp',
+];
+
 const digits = {
   1: ['..x..', '.xx..', '..x..', '..x..', '..x..', '..x..', '.xxx.'],
   2: ['.xxx.', 'x...x', '....x', '...x.', '..x..', '.x...', 'xxxxx'],
@@ -443,5 +560,14 @@ export const PIXELS = {
   barCounter,
   glass,
   shaker,
+  symStar,
+  symHouse,
+  symHeart,
+  symRoad,
+  symFire,
+  symWater,
+  symMoon,
+  symDoor,
+  cardBack,
   digits,
 };

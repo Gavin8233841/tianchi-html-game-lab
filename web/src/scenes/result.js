@@ -1,15 +1,7 @@
-import { bake, get, spr, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
+import { bake, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
 import { easeOutBack } from '../engine/fx.js';
-import { depositWarehouse, sanitizeWarehouse } from '../core/warehouse.js';
-
-const WISH_DONE = {
-  relief: '烦恼溶进酒里，今晚好眠。',
-  fun: '这一口下去，星星都在舌尖炸开！',
-};
-const WISH_HALF = {
-  relief: '酒是淡了点，但烦恼也淡了点。',
-  fun: '乐子找着一半，下次挖深点。',
-};
+import { sanitizeWarehouse } from '../core/warehouse.js';
+import { WISH_BY_ID, SYMBOL_LABEL } from '../core/charades.js';
 
 const LOGICAL_W = 160;
 const LOGICAL_H = 128;
@@ -19,10 +11,15 @@ const LINE_AT = 0.6;
 const LINE_STEP = 0.28;
 const CONFETTI_BURSTS = 8;
 
+const TIER_STAMP = { fulfilled: '免单！', warm: '微醺', discount: '打折', weird: '怪酒' };
+const TIER_TITLE = { fulfilled: '愿望达成', warm: '微醺一杯', discount: '愿望打折', weird: '一杯怪酒' };
+const WEIRD_LINE = '它调出了一杯……难以名状的东西。你们面面相觑，都笑了。';
+
 let t = 0;
 let stampAge = null;
 let fulfilled = false;
 let completion = 0;
+let tier = 'discount';
 let resizeHandler = null;
 let used = false;
 
@@ -50,48 +47,58 @@ function drawStamp(g, text, color) {
   g.globalAlpha = 1;
 }
 
+function gapLine(gaps, warehouse) {
+  const bits = [];
+  if (gaps.symbols.length > 0) bits.push(`符号「${gaps.symbols.map((s) => SYMBOL_LABEL[s]).join('、')}」`);
+  if (gaps.water > 0) bits.push(`水 ${gaps.water}ml`);
+  if (gaps.stardust > 0) bits.push(`星尘 ${gaps.stardust}g`);
+  if (bits.length === 0) return '仓库已经攒够下一杯的料了——下次去吧台直接比划。';
+  return `下一杯还差：${bits.join(' · ')}（仓库现有 水${warehouse.water}ml · 星尘${warehouse.stardust}g）`;
+}
+
 export const result = {
   enter(ctx) {
     bake();
     const run = ctx.run;
     const s = run.settlement;
+    const wish = WISH_BY_ID[run.wish];
     t = 0;
     stampAge = null;
     used = false;
     fulfilled = s.fulfilled;
     completion = s.completion;
+    tier = s.tier;
 
     ctx.canvas.style.display = 'block';
     fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
     resizeHandler = () => fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
     window.addEventListener('resize', resizeHandler);
 
-    const percent = Math.round(s.completion * 100);
-    // 余料入酒馆仓库（跨局持久）；banked 标记防刷新重复入库
+    // 余料酒直接成为仓库新值（酒吧台已算好消耗）；banked 防刷新重复入库
     let warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
     if (!s.banked) {
-      warehouse = depositWarehouse(warehouse, s);
+      warehouse = sanitizeWarehouse(s.warehouseAfter);
       ctx.storage.saveWarehouse(warehouse);
       ctx.commitRun({ ...run, settlement: { ...s, banked: true } });
     }
-    const surplusLine = s.surplusWater + s.surplusStardust > 0
-      ? `余料入库：水 +${s.surplusWater}ml · 星尘 +${s.surplusStardust}g（仓库现有 水${warehouse.water}ml · 星尘${warehouse.stardust}g）`
-      : `没有余料。仓库现有 水${warehouse.water}ml · 星尘${warehouse.stardust}g`;
-    const lines = s.fulfilled
-      ? [
-        [WISH_DONE[run.wish], ''],
-        [`完成度 ${percent}% · 原价 100 币 → 免单！`, 'price'],
-        [surplusLine, 'coin'],
-      ]
-      : [
-        [WISH_HALF[run.wish], ''],
-        [`完成度 ${percent}%`, ''],
-        ['原价 100 币', ''],
-        [`折后 ${s.price} 币`, 'price'],
-        [surplusLine, 'coin'],
-      ];
-    if (run.status === 'settled' && run.shield <= 0) {
-      lines.push(['（这次是扶着墙回来的……已存原料保住了，身上带的全丢了。）', 'hint']);
+
+    const lines = [];
+    lines.push([`《${s.drink}》——${s.drinkText}`, '']);
+    if (s.tier === 'weird') {
+      lines.push([WEIRD_LINE, '']);
+    } else {
+      lines.push([fulfilled ? wish.done : wish.half, '']);
+    }
+    lines.push([`匹配度 ${s.match}% = 方向 ${s.direction} × 纯度 ${Math.round(s.purity * 100)}%`, 'price']);
+    if (fulfilled) {
+      lines.push(['调酒师擦着杯子："这杯实现了99%。剩下那1%……得你自己走。"', '']);
+      lines.push(['原价 100 币 → 免单！', 'price']);
+    } else {
+      lines.push([`原价 100 币 → 折后 ${s.price} 币`, 'price']);
+    }
+    lines.push([gapLine(s.gaps, warehouse), 'coin']);
+    if (run.shield <= 0) {
+      lines.push(['（这次是扶着墙回来的……身上带的原料丢了，仓库的还在。）', 'hint']);
     }
     lines.forEach(([text, cls], i) => {
       ctx.scheduler.after(LINE_AT + i * LINE_STEP, () => {
@@ -117,8 +124,8 @@ export const result = {
 
     ctx.scheduler.after(STAMP_AT, () => {
       stampAge = 0;
-      ctx.audio.play(s.fulfilled ? 'fulfill' : 'discount');
-      if (s.fulfilled) {
+      ctx.audio.play(fulfilled ? 'fulfill' : 'discount');
+      if (fulfilled) {
         ctx.fx.addTrauma(0.3);
         for (let k = 0; k < CONFETTI_BURSTS; k++) {
           ctx.scheduler.after(k * 0.12, () => {
@@ -150,7 +157,8 @@ export const result = {
     g.fillStyle = '#16121f';
     g.fillRect(-8, -8, LOGICAL_W + 16, LOGICAL_H + 16);
 
-    const title = fulfilled ? neon('愿望达成', '#f2c14e', 14) : neon('愿望打折', '#ef5da8', 14);
+    const color = fulfilled ? '#f2c14e' : tier === 'weird' ? '#8b81a8' : '#ef5da8';
+    const title = neon(TIER_TITLE[tier], color, 14);
     let glow = fulfilled ? 0.7 + 0.3 * Math.sin(t * 9) : 0.9;
     if (fulfilled && Math.sin(t * 17) > 0.96) glow = 0.3;
     g.globalAlpha = glow;
@@ -160,7 +168,7 @@ export const result = {
     pourGlass(g, 56, 44, 3, completion);
 
     if (stampAge !== null) {
-      drawStamp(g, fulfilled ? '免单！' : '打折', fulfilled ? '#f2c14e' : '#ef5da8');
+      drawStamp(g, TIER_STAMP[tier], color);
     }
   },
 };

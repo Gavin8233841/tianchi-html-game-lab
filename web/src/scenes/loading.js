@@ -1,6 +1,6 @@
 import { deserialize } from '../core/save.js';
 
-const RESTORABLE = ['dive', 'extract', 'mix', 'result'];
+const RESTORABLE = ['dive', 'extract', 'bar', 'result'];
 
 export const loading = {
   enter(ctx) {

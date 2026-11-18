@@ -395,7 +395,7 @@ function aftermath(ctx, state, effects, clicked, delay, waves, locked) {
 
   let target = null;
   if (state.status === 'extract-ready') target = 'extract';
-  else if (state.status === 'dead' || state.status === 'emergency') target = 'mix';
+  else if (state.status === 'dead' || state.status === 'emergency') target = 'bar';
   if (target) {
     ctx.input.lock();
     transitionTimer = ctx.scheduler.after(delay + 0.05, () => {

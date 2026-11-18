@@ -1,11 +1,7 @@
 import { createRun } from '../core/rules.js';
+import { CHARADE_WISHES } from '../core/charades.js';
 import { bake, get, spr, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
 import { sanitizeWarehouse } from '../core/warehouse.js';
-
-const WISHES = [
-  { id: 'relief', label: '买醉解忧', desc: '忘掉烦恼的一杯' },
-  { id: 'fun', label: '喝酒找乐', desc: '来点刺激的一杯' },
-];
 
 const LOGICAL_W = 160;
 const LOGICAL_H = 128;
@@ -19,9 +15,91 @@ const STARS = Array.from({ length: 24 }, (_, i) => ({
 
 let elapsed = 0;
 let used = false;
+let phase = 'door';
 let timeoutTimer = null;
 let resizeHandler = null;
 let buttons = [];
+
+function glassButton(ctx, label, sub, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'glass-btn';
+  const lab = document.createElement('span');
+  lab.className = 'glass-label';
+  lab.textContent = label;
+  button.append(lab);
+  if (sub) {
+    const s = document.createElement('span');
+    s.className = 'glass-sub';
+    s.textContent = sub;
+    button.append(s);
+  }
+  button.addEventListener('click', onClick);
+  button.addEventListener('pointerenter', () => {
+    if (!used) ctx.audio.play('uiClick');
+  });
+  buttons.push(button);
+  return button;
+}
+
+function startCountdown(ctx, onTimeout) {
+  elapsed = 0;
+  if (timeoutTimer !== null) ctx.scheduler.cancel(timeoutTimer);
+  timeoutTimer = ctx.scheduler.after(COUNTDOWN, () => {
+    timeoutTimer = null;
+    onTimeout();
+  });
+}
+
+function buildPanel(ctx) {
+  ctx.panel.replaceChildren();
+  buttons = [];
+  const warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
+  if (warehouse.water + warehouse.stardust > 0) {
+    const stock = document.createElement('p');
+    stock.className = 'hint warehouse-line';
+    stock.textContent = `酒馆仓库：水 ${warehouse.water}ml · 星尘 ${warehouse.stardust}g（攒够料，调酒师能给你调更纯的一杯）`;
+    ctx.panel.append(stock);
+  }
+
+  if (phase === 'door') {
+    const intro = document.createElement('p');
+    intro.textContent = '旅人，夜深了。推开这扇门，选一张愿望卡——先去矿区挖原料，再回吧台比划给调酒师看。';
+    ctx.panel.append(intro);
+    const wrap = document.createElement('div');
+    wrap.className = 'wish-wrap';
+    wrap.append(glassButton(ctx, '买醉解忧', '推门而入', () => enterWishPhase(ctx)));
+    ctx.panel.append(wrap);
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = '玩法：扫雷挖水与星尘 → 撤离回吧 → 用符号牌向调酒师比划你的愿望。它猜得越准、料越足，愿望实现得越完整。';
+    ctx.panel.append(hint);
+    startCountdown(ctx, () => enterWishPhase(ctx));
+    return;
+  }
+
+  const intro = document.createElement('p');
+  intro.textContent = '选一张愿望卡（10 秒）。它会被扣在吧台上——调酒师看不见，只能靠你比划。';
+  ctx.panel.append(intro);
+  const wrap = document.createElement('div');
+  wrap.className = 'wish-wrap';
+  for (const wish of CHARADE_WISHES) {
+    wrap.append(glassButton(ctx, wish.label, wish.desc, () => choose(ctx, wish)));
+  }
+  ctx.panel.append(wrap);
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+  hint.textContent = '水在浅层就有，星尘只在更深处——星尘还能在吧台显影暗牌。超时默认「想家」。';
+  ctx.panel.append(hint);
+  startCountdown(ctx, () => choose(ctx, CHARADE_WISHES[0]));
+}
+
+function enterWishPhase(ctx) {
+  if (used || phase !== 'door') return;
+  phase = 'wish';
+  ctx.audio.play('uiClick');
+  buildPanel(ctx);
+}
 
 function choose(ctx, wish) {
   if (used) return;
@@ -42,56 +120,14 @@ export const tavern = {
     bake();
     elapsed = 0;
     used = false;
+    phase = 'door';
     timeoutTimer = null;
     buttons = [];
     ctx.canvas.style.display = 'block';
     fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
     resizeHandler = () => fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
     window.addEventListener('resize', resizeHandler);
-
-    const intro = document.createElement('p');
-    intro.textContent = '旅人，想喝点什么？10 秒内选好愿望，去矿区挖原料。水在浅层就有，星尘只在更深处。';
-    ctx.panel.append(intro);
-
-    const warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
-    if (warehouse.water + warehouse.stardust > 0) {
-      const stock = document.createElement('p');
-      stock.className = 'hint warehouse-line';
-      stock.textContent = `酒馆仓库：水 ${warehouse.water}ml · 星尘 ${warehouse.stardust}g（挖多的原料自动入库，老板先帮你存着）`;
-      ctx.panel.append(stock);
-    }
-
-    const wrap = document.createElement('div');
-    wrap.className = 'wish-wrap';
-    for (const wish of WISHES) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'glass-btn';
-      const label = document.createElement('span');
-      label.className = 'glass-label';
-      label.textContent = wish.label;
-      const sub = document.createElement('span');
-      sub.className = 'glass-sub';
-      sub.textContent = wish.desc;
-      button.append(label, sub);
-      button.addEventListener('click', () => choose(ctx, wish));
-      button.addEventListener('pointerenter', () => {
-        if (!used) ctx.audio.play('uiClick');
-      });
-      buttons.push(button);
-      wrap.append(button);
-    }
-    ctx.panel.append(wrap);
-
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = '玩法：点格扫描，首击必安全；挖到原料先背在身上，找到出口才算存好。雷会消耗护盾，护盾归零人财两空（已存的保留）。超时默认「买醉解忧」。';
-    ctx.panel.append(hint);
-
-    timeoutTimer = ctx.scheduler.after(COUNTDOWN, () => {
-      timeoutTimer = null;
-      choose(ctx, WISHES[0]);
-    });
+    buildPanel(ctx);
   },
   exit(ctx) {
     if (resizeHandler) {
