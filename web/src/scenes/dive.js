@@ -127,6 +127,18 @@ function drawCell(g, cell, index, exit, layout) {
       g.globalAlpha = 1;
       return;
     }
+    if (index === exit) {
+      // v7：出口信标——每层生成后即标出出口，朝它推进，不盲目找
+      spr(g, get('hidden'), x, y);
+      g.globalAlpha = 0.85;
+      spr(g, get('exit'), x, y);
+      g.globalAlpha = 0.45 + 0.3 * Math.sin(glowT * 3);
+      g.strokeStyle = '#f2c14e';
+      g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      g.globalAlpha = 1;
+      return;
+    }
     spr(g, get('hidden'), x, y);
     return;
   }
@@ -444,7 +456,7 @@ export const dive = {
     ctx.hud.setMode(mode, (m) => selectMode(ctx, m));
     const tip = document.createElement('p');
     tip.className = 'hint';
-    tip.textContent = '数字=周围「雷+事件+原料」总数，四种都藏着。推出特殊格→探=认出种类→挖=雷扣盾/事件触发/原料收集。旗=免费标记。右键插旗，快捷键 1/2/3。';
+    tip.textContent = '数字=周围「雷+事件+原料」总数，四种都藏着。推出特殊格→探=认出种类→挖=雷扣盾/事件触发/原料收集。出口已金框标出，朝它推进、路上攒料。旗=免费标记，右键插旗，快捷键 1/2/3。';
     ctx.panel.append(tip);
   },
   exit(ctx) {
