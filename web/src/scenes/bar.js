@@ -5,48 +5,56 @@ import {
 } from '../core/charades.js';
 import { CONFIG } from '../core/config.js';
 import { sanitizeWarehouse } from '../core/warehouse.js';
-import { bake, get, spr, neon, fitCanvas, pourGlass } from '../engine/sprites.js';
-import { easeOutCubic } from '../engine/fx.js';
+import { bake, get, spr, neon, fitCanvasHD, pourGlass } from '../engine/sprites.js';
+import { easeOutCubic, easeOutBack } from '../engine/fx.js';
 
-const LOGICAL_W = 160;
-const LOGICAL_H = 128;
+// 320×240 逻辑空间，backing 按显示倍率放大：文字/卡牌/动画全分辨率光栅化，像素 sprite 整数倍保留像素味。
+const LOGICAL_W = 320;
+const LOGICAL_H = 240;
 const PLACE_TIME = 20;
 const MIX_TIME = 1.6;
 const SHAKE_TIME = 0.55;
-const CARD_W = 18;
-const CARD_H = 22;
-const HAND_X = 16;
-const HAND_Y = 98;
-const HAND_GAP = 32;
-const TAB_X = 8;
-const TAB_Y = 60;
-const TAB_GAP = 25;
+const CARD_W = 40;
+const CARD_H = 52;
+const TAB_Y = 102;
+const TAB_X0 = 20;
+const TAB_STEP = 48;
+const HAND_Y = 178;
+const HAND_X0 = 56;
+const HAND_STEP = 56;
+const POP_TIME = 0.2;
 
-const STARS = Array.from({ length: 20 }, (_, i) => ({
+const STARS = Array.from({ length: 26 }, (_, i) => ({
   x: (i * 67 + 13) % LOGICAL_W,
-  y: (i * 41 + 7) % 50,
+  y: (i * 41 + 7) % 96,
   phase: i * 1.7,
 }));
 
 let elapsed = 0;
 let placeElapsed = 0;
 let mixT = 0;
+let viewScale = 1;
 let warehouse = null;
 let resizeHandler = null;
+let moveHandler = null;
+let leaveHandler = null;
 let placeTimer = null;
 let mixTimer = null;
 let phaseWrap = null;
 let toastTimer = null;
+let hover = null;
+let tabAges = [];
+let handAges = [];
 
 function symSprite(id) {
   return get(`sym${id[0].toUpperCase()}${id.slice(1)}`);
 }
 
 function handRect(i) {
-  return { x: HAND_X + i * HAND_GAP, y: HAND_Y, w: CARD_W, h: CARD_H };
+  return { x: HAND_X0 + i * HAND_STEP, y: HAND_Y, w: CARD_W, h: CARD_H };
 }
 function tabRect(i) {
-  return { x: TAB_X + i * TAB_GAP, y: TAB_Y, w: CARD_W, h: CARD_H };
+  return { x: TAB_X0 + i * TAB_STEP, y: TAB_Y, w: CARD_W, h: CARD_H };
 }
 function inRect(p, r) {
   return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h;
@@ -94,6 +102,27 @@ function button(label, glass, onClick) {
   return b;
 }
 
+function syncAges(state, effects, action) {
+  for (const e of effects) {
+    if (e.type === 'place') {
+      tabAges.push(0);
+      handAges.splice(action.index, 1);
+    }
+    if (e.type === 'unplace') {
+      tabAges.splice(action.index, 1);
+      handAges.push(0);
+    }
+    if (e.type === 'continue') {
+      tabAges = state.bar.tableau.map(() => POP_TIME);
+      handAges = state.bar.hand.map(() => 0);
+    }
+  }
+  while (tabAges.length < state.bar.tableau.length) tabAges.push(POP_TIME);
+  while (tabAges.length > state.bar.tableau.length) tabAges.pop();
+  while (handAges.length < state.bar.hand.length) handAges.push(POP_TIME);
+  while (handAges.length > state.bar.hand.length) handAges.pop();
+}
+
 function act(ctx, action) {
   const { state, effects } = applyBarAction(ctx.run, { ...action, warehouse });
   const rej = effects.find((e) => e.type === 'rejected');
@@ -111,6 +140,7 @@ function act(ctx, action) {
     return;
   }
   ctx.audio.play('uiClick');
+  syncAges(state, effects, action);
   ctx.commitRun(state);
   if (state.bar.phase === 'done') {
     startMixing(ctx);
@@ -203,27 +233,43 @@ function renderPhase(ctx) {
   phaseWrap.append(mixing);
 }
 
-function drawCard(g, x, y, sym, hidden, border, revealable) {
+function drawCard(g, x, y, sym, hidden, border, revealable, pop) {
+  const k = pop < POP_TIME ? 0.7 + 0.3 * easeOutBack(Math.max(0, pop) / POP_TIME) : 1;
+  g.save();
+  g.translate(x + CARD_W / 2, y + CARD_H / 2);
+  g.scale(k, k);
+  g.translate(-CARD_W / 2, -CARD_H / 2);
   g.fillStyle = '#241d38';
-  g.fillRect(x, y, CARD_W, CARD_H);
+  g.fillRect(0, 0, CARD_W, CARD_H);
+  g.fillStyle = 'rgba(255,255,255,0.06)';
+  g.fillRect(2, 2, CARD_W - 4, 2);
   g.strokeStyle = border;
-  g.lineWidth = 1;
-  g.strokeRect(x + 0.5, y + 0.5, CARD_W - 1, CARD_H - 1);
+  g.lineWidth = 2;
+  g.strokeRect(1, 1, CARD_W - 2, CARD_H - 2);
   if (hidden) {
-    spr(g, get('cardBack'), x + 4, y + 3, 1);
-    g.font = 'bold 6px monospace';
+    spr(g, get('cardBack'), 10, 6, 2);
+    g.font = 'bold 12px monospace';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = revealable ? '#f2c14e' : '#8b81a8';
-    g.fillText('?', x + CARD_W / 2, y + 18);
+    g.fillText('?', CARD_W / 2, 42);
   } else {
-    spr(g, symSprite(sym), x + 4, y + 3, 1);
-    g.font = 'bold 6px monospace';
+    spr(g, symSprite(sym), 10, 6, 2);
+    g.font = 'bold 11px monospace';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#d8d2e8';
-    g.fillText(SYMBOL_LABEL[sym], x + CARD_W / 2, y + 18);
+    g.fillText(SYMBOL_LABEL[sym], CARD_W / 2, 42);
   }
+  g.restore();
+}
+
+function logicalPoint(ctx, event) {
+  const rect = ctx.canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * (ctx.canvas.width / rect.width) / viewScale,
+    y: (event.clientY - rect.top) * (ctx.canvas.height / rect.height) / viewScale,
+  };
 }
 
 export const bar = {
@@ -246,11 +292,30 @@ export const bar = {
     elapsed = 0;
     placeElapsed = 0;
     mixT = 0;
+    hover = null;
+    tabAges = run.bar.tableau.map(() => POP_TIME);
+    handAges = run.bar.hand.map(() => POP_TIME);
 
     ctx.canvas.style.display = 'block';
-    fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
-    resizeHandler = () => fitCanvas(ctx, LOGICAL_W, LOGICAL_H);
+    viewScale = fitCanvasHD(ctx, LOGICAL_W, LOGICAL_H);
+    resizeHandler = () => { viewScale = fitCanvasHD(ctx, LOGICAL_W, LOGICAL_H); };
     window.addEventListener('resize', resizeHandler);
+    moveHandler = (event) => {
+      const barState = ctx.run.bar;
+      if (!barState || barState.phase !== 'place') { hover = null; ctx.canvas.style.cursor = 'default'; return; }
+      const p = logicalPoint(ctx, event);
+      let next = null;
+      for (let i = 0; i < barState.hand.length; i++) if (inRect(p, handRect(i))) next = { zone: 'hand', idx: i };
+      if (!next) {
+        const from = barState.tableau.length - barState.placed;
+        for (let i = from; i < barState.tableau.length; i++) if (inRect(p, tabRect(i))) next = { zone: 'tab', idx: i };
+      }
+      hover = next;
+      ctx.canvas.style.cursor = next ? 'pointer' : 'default';
+    };
+    leaveHandler = () => { hover = null; ctx.canvas.style.cursor = 'default'; };
+    ctx.canvas.addEventListener('pointermove', moveHandler);
+    ctx.canvas.addEventListener('pointerleave', leaveHandler);
 
     const title = document.createElement('h2');
     title.textContent = '回到吧台';
@@ -277,10 +342,20 @@ export const bar = {
       window.removeEventListener('resize', resizeHandler);
       resizeHandler = null;
     }
+    if (moveHandler) {
+      ctx.canvas.removeEventListener('pointermove', moveHandler);
+      moveHandler = null;
+    }
+    if (leaveHandler) {
+      ctx.canvas.removeEventListener('pointerleave', leaveHandler);
+      leaveHandler = null;
+    }
+    ctx.canvas.style.cursor = 'default';
     clearTimers(ctx);
     ctx.audio.stopShake();
     phaseWrap = null;
     warehouse = null;
+    hover = null;
     elapsed = 0;
     mixT = 0;
   },
@@ -288,18 +363,21 @@ export const bar = {
     elapsed += dt;
     if (ctx.run.bar && ctx.run.bar.phase === 'place') placeElapsed += dt;
     if (ctx.run.bar && ctx.run.bar.phase === 'done') mixT += dt;
+    tabAges = tabAges.map((a) => a + dt);
+    handAges = handAges.map((a) => a + dt);
   },
   onPointer(ctx, p) {
     const run = ctx.run;
     if (!run.bar || run.bar.phase !== 'place' || p.type !== 'pointerdown') return;
+    const q = { x: p.x / viewScale, y: p.y / viewScale };
     for (let i = 0; i < run.bar.hand.length; i++) {
-      if (inRect(p, handRect(i))) {
+      if (inRect(q, handRect(i))) {
         act(ctx, { type: 'place', index: i });
         return;
       }
     }
     for (let i = 0; i < run.bar.tableau.length; i++) {
-      if (inRect(p, tabRect(i))) {
+      if (inRect(q, tabRect(i))) {
         act(ctx, { type: 'unplace', index: i });
         return;
       }
@@ -307,9 +385,10 @@ export const bar = {
   },
   render(ctx) {
     const g = ctx.g;
+    g.setTransform(viewScale, 0, 0, viewScale, 0, 0);
+    g.imageSmoothingEnabled = false;
     const run = ctx.run;
     const barState = run.bar;
-    g.imageSmoothingEnabled = false;
     g.fillStyle = '#16121f';
     g.fillRect(-8, -8, LOGICAL_W + 16, LOGICAL_H + 16);
     for (const star of STARS) {
@@ -321,93 +400,107 @@ export const bar = {
 
     const mixing = barState.phase === 'done';
     const bob = Math.round(Math.sin(elapsed * 2.2));
-    spr(g, get('bartender'), 56, 10 + bob, 4);
-    spr(g, get('barCounter'), 0, 84, 5);
+    spr(g, get('bartender'), 124, 26 + bob, 6);
+    spr(g, get('barCounter'), 0, 156, 10);
 
     if (!mixing) {
       const wish = WISH_BY_ID[run.wish];
-      g.font = 'bold 7px monospace';
+      g.font = 'bold 11px monospace';
       g.textAlign = 'left';
       g.textBaseline = 'middle';
       g.fillStyle = '#f2c14e';
-      g.fillText(`愿望:${wish.label}`, 4, 6);
+      g.fillText(`愿望:${wish.label}`, 8, 12);
       for (let i = 0; i < 3; i++) {
         const on = i < barState.patience;
         g.fillStyle = on ? '#57e6d9' : '#2c2444';
-        g.fillRect(4 + i * 8, 12, 5, 7);
+        g.fillRect(8 + i * 12, 20, 8, 10);
         g.fillStyle = on ? '#fff3c4' : '#453a6b';
-        g.fillRect(4 + i * 8, 12, 5, 2);
+        g.fillRect(8 + i * 12, 20, 8, 3);
       }
-      g.font = '6px monospace';
+      g.font = '10px monospace';
       g.fillStyle = '#8b81a8';
-      g.fillText(`第${barState.round}轮`, 30, 16);
+      g.fillText(`第${barState.round}轮`, 48, 25);
 
       if (barState.phase === 'place') {
         const remaining = Math.max(0, PLACE_TIME - placeElapsed);
         const urgent = remaining <= 5;
-        g.lineWidth = 2;
+        g.lineWidth = 3;
         g.strokeStyle = '#2c2444';
         g.beginPath();
-        g.arc(148, 12, 7, 0, Math.PI * 2);
+        g.arc(302, 16, 10, 0, Math.PI * 2);
         g.stroke();
         g.strokeStyle = urgent ? '#ff6b6b' : '#57e6d9';
         g.beginPath();
-        g.arc(148, 12, 7, -Math.PI / 2, -Math.PI / 2 + (remaining / PLACE_TIME) * Math.PI * 2);
+        g.arc(302, 16, 10, -Math.PI / 2, -Math.PI / 2 + (remaining / PLACE_TIME) * Math.PI * 2);
         g.stroke();
-        g.font = 'bold 7px monospace';
+        g.font = 'bold 10px monospace';
         g.textAlign = 'center';
         g.fillStyle = urgent ? '#ff6b6b' : '#d8d2e8';
-        g.fillText(String(Math.ceil(remaining)), 148, 12);
+        g.fillText(String(Math.ceil(remaining)), 302, 16);
       }
 
       if (barState.phase === 'react' && barState.interpretation) {
         const mood = barState.interpretation.mood;
         const mark = mood === 'excited' ? '！' : mood === 'thinking' ? '……' : '？';
         const color = mood === 'excited' ? '#f2c14e' : mood === 'thinking' ? '#57e6d9' : '#8b81a8';
-        const bubble = neon(mark, color, 10);
-        g.drawImage(bubble, 104, 8 + bob);
+        const bubble = neon(mark, color, 20, viewScale);
+        g.drawImage(bubble, 206, 28 + bob, bubble.width / viewScale, bubble.height / viewScale);
       }
 
       const from = barState.tableau.length - barState.placed;
+      if (barState.phase === 'place') {
+        g.strokeStyle = '#2c2444';
+        g.lineWidth = 2;
+        g.setLineDash([4, 4]);
+        for (let i = barState.tableau.length; i < 6; i++) {
+          const r = tabRect(i);
+          g.strokeRect(r.x + 1, r.y + 1, CARD_W - 2, CARD_H - 2);
+        }
+        g.setLineDash([]);
+      }
       for (let i = 0; i < barState.tableau.length; i++) {
         const r = tabRect(i);
-        drawCard(g, r.x, r.y, barState.tableau[i], false, i >= from ? '#57e6d9' : '#453a6b', false);
+        const hovered = hover && hover.zone === 'tab' && hover.idx === i;
+        const border = i >= from ? (hovered ? '#8ff2e8' : '#57e6d9') : '#453a6b';
+        drawCard(g, r.x, r.y - (hovered ? 2 : 0), barState.tableau[i], false, border, false, tabAges[i] ?? POP_TIME);
       }
       const avail = availableMaterials(run, warehouse);
       for (let i = 0; i < barState.hand.length; i++) {
         const c = barState.hand[i];
         const r = handRect(i);
-        drawCard(g, r.x, r.y, c.sym, c.hidden, c.hidden ? '#f2c14e' : '#453a6b', avail.stardust >= REVEAL_COST);
+        const hovered = hover && hover.zone === 'hand' && hover.idx === i;
+        const border = c.hidden ? '#f2c14e' : hovered ? '#8ff2e8' : '#453a6b';
+        drawCard(g, r.x, r.y - (hovered ? 2 : 0), c.sym, c.hidden, border, avail.stardust >= REVEAL_COST, handAges[i] ?? POP_TIME);
       }
-      g.font = '6px monospace';
-      g.textAlign = 'center';
+      g.font = '10px monospace';
+      g.textAlign = 'right';
       g.textBaseline = 'middle';
-      g.fillStyle = '#d8d2e8';
-      g.fillText(`水 ${avail.water}ml · 星尘 ${avail.stardust}g`, 80, 125);
+      g.fillStyle = '#b8aed4';
+      g.fillText(`水 ${avail.water}ml · 星尘 ${avail.stardust}g`, 312, 36);
     } else {
       const s = run.settlement;
-      const title = neon(`《${s.drink}》`, '#ef5da8', 9);
-      g.drawImage(title, Math.floor((LOGICAL_W - title.width) / 2), 0);
+      const title = neon(`《${s.drink}》`, '#ef5da8', 18, viewScale);
+      g.drawImage(title, (LOGICAL_W - title.width / viewScale) / 2, 2, title.width / viewScale, title.height / viewScale);
       const p = Math.min(1, Math.max(0, (mixT - SHAKE_TIME) / (MIX_TIME - SHAKE_TIME)));
       const eased = easeOutCubic(p);
-      pourGlass(g, 100, 45, 3, eased * s.completion);
-      let cx = 52;
-      let cy = 58;
+      pourGlass(g, 180, 64, 6, eased * s.completion);
+      let cx = 104;
+      let cy = 116;
       let angle = 0;
       if (mixT < SHAKE_TIME) {
-        cx += Math.sin(mixT * 22) * 5;
-        cy += Math.cos(mixT * 22) * 2;
+        cx += Math.sin(mixT * 22) * 8;
+        cy += Math.cos(mixT * 22) * 3;
         angle = Math.sin(mixT * 22) * 0.3;
       } else {
         const q = easeOutCubic(Math.min(1, p * 1.8));
-        cx = 52 + (108 - 52) * q;
-        cy = 58 + (28 - 58) * q;
+        cx = 104 + (250 - 104) * q;
+        cy = 116 + (36 - 116) * q;
         angle = -2.3 * q;
       }
       g.save();
       g.translate(Math.round(cx), Math.round(cy));
       g.rotate(angle);
-      spr(g, get('shaker'), -15, -19, 3);
+      spr(g, get('shaker'), -30, -39, 6);
       g.restore();
     }
   },

@@ -92,3 +92,11 @@
 - 技术：core/charades.js 纯 reducer；scenes/bar.js 替换 scenes/mix.js（已删）；save 增加 bar/provenance/新结算形状校验（result 档必须带 settlement、bar 档必须带 bar）；recipe 只留 completion/discountedPrice，warehouse 只留 sanitize（warehouseAfter 直接成为仓库新值）。
 - 41 单测全绿（新增㉝–㊳）；浏览器实测全流程（入门→愿望→扫雷→撤离→显影/摆牌/收回→直译→喝→结算；中途档恢复；99% 免单档）截图见 docs/evidence/charades-bar/。
 - 二期预留：事件产物→吧台道具、默契值成长、酒话墙（异步联机留言）。
+
+## 2026-11-19：v9 吧台/结算视觉重做（用户「卡牌图片动画模糊看不清」，参考 frontend-craft）
+
+- 根因：吧台/结算在 160×128 低分辨率 backing 上画 6px 小字与 10×10 图标再放大 → 马赛克糊字。CSS 已有 pixelated，问题不在放大方式而在光栅化分辨率。
+- 修法：sprites.js 新增 fitCanvasHD（backing=逻辑尺寸×整数显示倍率，render 每帧 setTransform）与 neon 的 scale 参数（按显示分辨率烘焙霓虹字）；fitCanvas 补 setTransform 复位。像素 sprite 仍整数倍放大保留像素味，文字/卡框/动画全分辨率光栅化 → 清晰。
+- 吧台改 320×240 逻辑空间：卡牌 40×52、图标 2x、文字≥10px；统一间距与层级（左上愿望/耐心/轮次，右上计时环+材料条）；空摆牌区画虚线槽位（ affordance）；hover 抬升+亮边+pointer 光标；摆牌/收回 easeOutBack pop 动画；调酒倒注点右移避开调酒师脸。结算页同步 HD（酒杯6x、印章26px、霓虹28px、粒子坐标×2）。
+- 品牌不变：沿用现有色板/像素 sprite/DOM 组件（event-card/glass-btn），只重做光栅化与布局，符合 frontend-craft「扩展现有设计系统」原则。
+- 验证：2x 显示倍率下全流程截图 docs/evidence/charades-bar/v9-*.png（place/hover/pop/react/mix/result），文字卡牌动画均清晰；41 单测保持绿；离线包重建+Desktop 副本更新。
