@@ -4,6 +4,7 @@ import { createInput } from './engine/input.js';
 import { createStorage } from './engine/storage.js';
 import { createFx } from './engine/fx.js';
 import { createParticles } from './engine/particles.js';
+import { createAudio } from './engine/audio.js';
 import { serialize } from './core/save.js';
 import { createHud } from './ui/hud.js';
 import { loading } from './scenes/loading.js';
@@ -27,6 +28,7 @@ const ctx = {
   scheduler: createScheduler(),
   fx: createFx(),
   particles: createParticles(),
+  audio: createAudio(),
   storage,
   run: null,
   currentSceneName: null,
@@ -73,8 +75,14 @@ const loop = createLoop({
 });
 
 const onVisibility = () => {
-  if (document.visibilityState === 'hidden') ctx.persist();
+  if (document.visibilityState === 'hidden') {
+    ctx.persist();
+    ctx.audio.suspend();
+  } else {
+    ctx.audio.resume();
+  }
 };
+const onPointerDown = () => ctx.audio.unlock();
 const onPageHide = () => {
   ctx.persist();
   detach();
@@ -88,10 +96,12 @@ const onPageShow = (evt) => {
 };
 function attach() {
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pagehide', onPageHide);
 }
 function detach() {
   document.removeEventListener('visibilitychange', onVisibility);
+  window.removeEventListener('pointerdown', onPointerDown, true);
   window.removeEventListener('pagehide', onPageHide);
 }
 attach();

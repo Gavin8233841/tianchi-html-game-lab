@@ -18,6 +18,7 @@ export const tavern = {
       button.textContent = `${wish.label}（${wish.desc}）`;
       button.addEventListener('click', () => {
         button.disabled = true;
+        ctx.audio.play('uiClick');
         const seed = ctx.debugSeed ?? (Date.now() >>> 0);
         ctx.commitRun(createRun({ wish: wish.id, seed }));
         ctx.goto('dive');

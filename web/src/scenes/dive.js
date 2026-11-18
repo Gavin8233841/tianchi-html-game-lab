@@ -115,6 +115,7 @@ function swing(ctx) {
 function revealStep(ctx, index, combo, chainLength) {
   shownRevealed.add(index);
   flipAnims.set(index, 0);
+  ctx.audio.playChain(combo - 1);
   lastRevealedIndex = index;
   swing(ctx);
   const { x, y } = cellCenter(index, ctx.run.board.width);
@@ -145,6 +146,7 @@ function pulseBar(ctx, resource) {
 }
 
 function pickupFx(ctx, pickup) {
+  ctx.audio.play(pickup.resource === 'water' ? 'pickupWater' : 'pickupStardust');
   const from = cellCenter(pickup.index, ctx.run.board.width);
   const to = hudTarget(ctx, pickup.resource);
   const unit = RESOURCE_UNIT[pickup.resource];
@@ -276,6 +278,7 @@ export const dive = {
     if (effects.some((e) => e.type === 'rejected')) return;
     ctx.commitRun(state);
     ctx.hud.update(state);
+    ctx.audio.play('dig');
     const width = state.board.width;
     const clicked = cellCenter(index, width);
     ctx.fx.spawnFloatText(clicked.x, clicked.y + 6, '体力−1', '#8b81a8', { size: 5, life: 0.5, rise: 8 });
@@ -306,6 +309,7 @@ export const dive = {
     }
 
     if (mine) {
+      ctx.audio.play('mine');
       shownRevealed.add(mine.index);
       lastRevealedIndex = mine.index;
       swing(ctx);
@@ -319,6 +323,7 @@ export const dive = {
     }
 
     if (death) {
+      ctx.audio.play('death');
       ctx.fx.addTrauma(0.9);
       desatTarget = 1;
       vignette = 0.6;
@@ -338,6 +343,7 @@ export const dive = {
     if (exitEffect) {
       const c = cellCenter(exitEffect.index, width);
       queueTimers.push(ctx.scheduler.after(delay, () => {
+        ctx.audio.play('exit');
         exitRing = { index: exitEffect.index, age: 0 };
         ctx.fx.spawnFloatText(c.x, c.y - 4, '已存好', '#f2c14e', { size: 7, life: 0.9 });
         ctx.particles.confetti(c.x, c.y);

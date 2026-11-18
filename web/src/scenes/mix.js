@@ -26,7 +26,9 @@ export const mix = {
     mixing.className = 'hint';
     mixing.textContent = '摇壶中……';
     ctx.panel.append(title, story, mixing);
+    ctx.audio.startShake();
     ctx.scheduler.after(1.2, () => {
+      ctx.audio.stopShake();
       const { state, effects } = applyAction(ctx.run, { type: 'settle' });
       if (effects.some((e) => e.type === 'rejected')) return;
       ctx.commitRun(state);

@@ -11,6 +11,7 @@ export const result = {
   enter(ctx) {
     const run = ctx.run;
     const s = run.settlement;
+    ctx.audio.play(s.fulfilled ? 'fulfill' : 'discount');
     const title = document.createElement('h2');
     title.textContent = s.fulfilled ? '愿望达成！' : '愿望打折……';
     const wishLine = document.createElement('p');
@@ -34,6 +35,7 @@ export const result = {
     again.textContent = '再来一局';
     again.addEventListener('click', () => {
       again.disabled = true;
+      ctx.audio.play('uiClick');
       ctx.goto('tavern', { keepRun: false });
     });
     ctx.panel.append(again);

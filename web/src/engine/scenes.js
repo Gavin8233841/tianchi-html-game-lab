@@ -2,6 +2,7 @@ export function cleanupGameState(ctx, { keepRun = true } = {}) {
   ctx.scheduler.clear();
   if (ctx.particles) ctx.particles.clear();
   if (ctx.fx) ctx.fx.clear();
+  if (ctx.audio) ctx.audio.stopShake();
   ctx.input.unlock();
   ctx.hud.clear();
   ctx.panel.replaceChildren();

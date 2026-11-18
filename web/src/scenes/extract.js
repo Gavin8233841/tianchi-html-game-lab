@@ -17,6 +17,7 @@ export const extract = {
       for (const b of ctx.panel.querySelectorAll('button')) b.disabled = true;
       const { state, effects } = applyAction(ctx.run, action);
       if (effects.some((e) => e.type === 'rejected')) { used = false; return; }
+      ctx.audio.play('uiClick');
       ctx.commitRun(state);
       ctx.goto(target);
     };
