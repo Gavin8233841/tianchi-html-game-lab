@@ -109,3 +109,10 @@
   ③反应诊断 reactionNotes/reactionLines：陷阱牌点名警告（「它指着『心』：这个让我想到别的东西……你确定？」）、缺核心明说（「最重要的东西还没摆上来」），每轮可操作反馈。
 - 数据：SYMBOLS.mean、CHARADE_WISHES.hint；纯函数 reactionNotes/reactionLines 入 core；bar.js 渲染字典/提示/诊断；main.css 加 .sym-dict/.wish-hint（沿用色板）。
 - 42 单测绿（新增㊴）；浏览器实测 place 字典+提示、react 陷阱警告+缺核心诊断全文验证；截图 v10-bar-place/react.png；离线包+Desktop 更新。
+
+## 2026-11-19：v11 舒适化三件（用户试玩反馈）
+
+- ①怪酒改名：删「未知混合物」。乱组合按组合键 hash 确定性选名（同组合永远同名）：星尘误会/调酒师的即兴/第三只眼的盲区/银河抽象派/微醺星云/译不出的夜/哎呀，星座/错误答案，但好喝；空吧台=《行为艺术》。
+- ②全局背包：ui/backpack.js 常驻右上按钮，任何场景可开；overlay 三栏（身上/已存/仓库）各带数量+用途+风险提示，另列配方用途（水60ml基液、星尘6g+显影1g/张）。打开即 fx.setPaused(true) 暂停（scheduler+scene update 全停，render 继续），关闭/Esc/点遮罩恢复。fx 新增 paused 标志（clear 不复位，跨场景安全）。
+- ③去倒计时：酒馆门/愿望卡两阶段不再限时（删 COUNTDOWN/timeout/计时环）；吧台摆牌 20 秒自动确认也删（同属「给选项催你」），回合耐心结构保留。文案改「不计时，慢慢来」。
+- 42 单测绿（㉞ 改断言名池+乱序同名+空吧台名）；浏览器实测：12秒不自动推进、背包全文+调酒中暂停5秒不推进、怪酒《银河抽象派》；截图 v11-tavern/v11-bar-react.png；离线包+Desktop 更新。

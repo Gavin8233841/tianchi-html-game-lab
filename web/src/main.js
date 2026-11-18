@@ -7,6 +7,7 @@ import { createParticles } from './engine/particles.js';
 import { createAudio } from './engine/audio.js';
 import { serialize } from './core/save.js';
 import { createHud } from './ui/hud.js';
+import { createBackpack } from './ui/backpack.js';
 import { loading } from './scenes/loading.js';
 import { tavern } from './scenes/tavern.js';
 import { dive } from './scenes/dive.js';
@@ -54,6 +55,7 @@ const machine = createSceneMachine({
   ctx,
 });
 ctx.input = createInput({ canvas, onPointer: (evt) => machine.onPointer(evt) });
+createBackpack(ctx);
 
 const loop = createLoop({
   update(dt) {

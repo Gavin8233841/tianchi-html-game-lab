@@ -11,7 +11,6 @@ import { easeOutCubic, easeOutBack } from '../engine/fx.js';
 // 320×240 逻辑空间，backing 按显示倍率放大：文字/卡牌/动画全分辨率光栅化，像素 sprite 整数倍保留像素味。
 const LOGICAL_W = 320;
 const LOGICAL_H = 240;
-const PLACE_TIME = 20;
 const MIX_TIME = 1.6;
 const SHAKE_TIME = 0.55;
 const CARD_W = 40;
@@ -31,14 +30,12 @@ const STARS = Array.from({ length: 26 }, (_, i) => ({
 }));
 
 let elapsed = 0;
-let placeElapsed = 0;
 let mixT = 0;
 let viewScale = 1;
 let warehouse = null;
 let resizeHandler = null;
 let moveHandler = null;
 let leaveHandler = null;
-let placeTimer = null;
 let mixTimer = null;
 let phaseWrap = null;
 let toastTimer = null;
@@ -61,7 +58,6 @@ function inRect(p, r) {
 }
 
 function clearTimers(ctx) {
-  if (placeTimer !== null) { ctx.scheduler.cancel(placeTimer); placeTimer = null; }
   if (mixTimer !== null) { ctx.scheduler.cancel(mixTimer); mixTimer = null; }
   if (toastTimer !== null) { ctx.scheduler.cancel(toastTimer); toastTimer = null; }
 }
@@ -146,17 +142,7 @@ function act(ctx, action) {
     startMixing(ctx);
   } else {
     renderPhase(ctx);
-    if (effects.some((e) => e.type === 'continue')) startPlaceTimer(ctx);
   }
-}
-
-function startPlaceTimer(ctx) {
-  placeElapsed = 0;
-  if (placeTimer !== null) ctx.scheduler.cancel(placeTimer);
-  placeTimer = ctx.scheduler.after(PLACE_TIME, () => {
-    placeTimer = null;
-    if (ctx.run.bar && ctx.run.bar.phase === 'place') act(ctx, { type: 'confirm' });
-  });
 }
 
 function startMixing(ctx) {
@@ -185,7 +171,7 @@ function renderPhase(ctx) {
   if (bar.phase === 'place') {
     const hint = document.createElement('p');
     hint.className = 'hint';
-    hint.textContent = `点手牌摆上吧台（每回合至多 ${PLACE_PER_ROUND} 张），点吧台上的牌收回。暗牌花 ${REVEAL_COST}g 星尘显影。${PLACE_TIME} 秒后自动摆好。`;
+    hint.textContent = `点手牌摆上吧台（每回合至多 ${PLACE_PER_ROUND} 张），点吧台上的牌收回。暗牌花 ${REVEAL_COST}g 星尘显影。不计时，慢慢想。`;
     phaseWrap.append(hint);
     const dict = document.createElement('details');
     dict.className = 'sym-dict';
@@ -208,7 +194,6 @@ function renderPhase(ctx) {
   }
 
   if (bar.phase === 'react') {
-    if (placeTimer !== null) { ctx.scheduler.cancel(placeTimer); placeTimer = null; }
     const it = bar.interpretation;
     const card = document.createElement('div');
     card.className = 'event-card buff';
@@ -308,7 +293,6 @@ export const bar = {
     }
     warehouse = sanitizeWarehouse(ctx.storage.loadWarehouse());
     elapsed = 0;
-    placeElapsed = 0;
     mixT = 0;
     hover = null;
     tabAges = run.bar.tableau.map(() => POP_TIME);
@@ -356,7 +340,6 @@ export const bar = {
     phaseWrap = document.createElement('div');
     ctx.panel.append(title, story, wishLine, hintLine, phaseWrap);
     renderPhase(ctx);
-    if (run.bar.phase === 'place') startPlaceTimer(ctx);
   },
   exit(ctx) {
     if (resizeHandler) {
@@ -382,7 +365,6 @@ export const bar = {
   },
   update(ctx, dt) {
     elapsed += dt;
-    if (ctx.run.bar && ctx.run.bar.phase === 'place') placeElapsed += dt;
     if (ctx.run.bar && ctx.run.bar.phase === 'done') mixT += dt;
     tabAges = tabAges.map((a) => a + dt);
     handAges = handAges.map((a) => a + dt);
@@ -441,24 +423,6 @@ export const bar = {
       g.font = '10px monospace';
       g.fillStyle = '#8b81a8';
       g.fillText(`第${barState.round}轮`, 48, 25);
-
-      if (barState.phase === 'place') {
-        const remaining = Math.max(0, PLACE_TIME - placeElapsed);
-        const urgent = remaining <= 5;
-        g.lineWidth = 3;
-        g.strokeStyle = '#2c2444';
-        g.beginPath();
-        g.arc(302, 16, 10, 0, Math.PI * 2);
-        g.stroke();
-        g.strokeStyle = urgent ? '#ff6b6b' : '#57e6d9';
-        g.beginPath();
-        g.arc(302, 16, 10, -Math.PI / 2, -Math.PI / 2 + (remaining / PLACE_TIME) * Math.PI * 2);
-        g.stroke();
-        g.font = 'bold 10px monospace';
-        g.textAlign = 'center';
-        g.fillStyle = urgent ? '#ff6b6b' : '#d8d2e8';
-        g.fillText(String(Math.ceil(remaining)), 302, 16);
-      }
 
       if (barState.phase === 'react' && barState.interpretation) {
         const mood = barState.interpretation.mood;
