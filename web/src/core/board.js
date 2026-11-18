@@ -70,10 +70,11 @@ export function generateBoard(floorConfig, rngState, firstIndex) {
   const eventCount = Math.min(floorConfig.eventCount, pool.length, eventCandidates.length);
   for (let i = 0; i < eventCount; i++) cells[eventCandidates[i]].event = pool[i];
 
-  // v2 数字语义：adj = 邻格「雷 OR 事件」总数（原料格与出口不计入）
+  // v6 数字语义：adj = 邻格「雷 OR 事件 OR 原料(水/星尘)」总数（出口不计入）。
+  // 四种特殊格同等藏着、靠推理定位、探测认出、自己挖。
   for (let i = 0; i < total; i++) {
     if (cells[i].mine) continue;
-    cells[i].adj = neighbors(i, width, height).filter((n) => cells[n].mine || cells[n].event).length;
+    cells[i].adj = neighbors(i, width, height).filter((n) => cells[n].mine || cells[n].event || cells[n].content).length;
   }
   return { cells, exit, rngState: rng.getState() };
 }
@@ -86,9 +87,10 @@ export function revealChain(cells, width, height, startIndex) {
   while (queue.length > 0) {
     const index = queue.shift();
     order.push(index);
-    if (cells[index].adj !== 0) continue;
+    // v6：特殊格（雷/事件/原料）不连锁展开，必须推理+探测+自己挖
+    if (cells[index].adj !== 0 || cells[index].event || cells[index].content) continue;
     for (const n of neighbors(index, width, height)) {
-      if (seen.has(n) || cells[n].mine) continue;
+      if (seen.has(n) || cells[n].mine || cells[n].event || cells[n].content) continue;
       seen.add(n);
       queue.push(n);
     }

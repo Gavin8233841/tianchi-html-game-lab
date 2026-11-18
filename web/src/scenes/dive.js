@@ -117,6 +117,16 @@ function drawCell(g, cell, index, exit, layout) {
       g.globalAlpha = 1;
       return;
     }
+    if (cell.probed && cell.content) {
+      // v6：认出但未挖的原料：图标 + 呼吸边（水蓝/星尘金），挖开才收集
+      spr(g, get(cell.content.type), x, y);
+      g.globalAlpha = 0.55 + 0.35 * Math.sin(glowT * 4);
+      g.strokeStyle = cell.content.type === 'water' ? '#6cb8ff' : '#f2c14e';
+      g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      g.globalAlpha = 1;
+      return;
+    }
     spr(g, get('hidden'), x, y);
     return;
   }
@@ -434,7 +444,7 @@ export const dive = {
     ctx.hud.setMode(mode, (m) => selectMode(ctx, m));
     const tip = document.createElement('p');
     tip.className = 'hint';
-    tip.textContent = '数字=周围雷+事件总数。挖=扫描(0连锁)；探=安全认清一格；旗=标记疑似。连锁翻出的原料留在原地，点一下才收集（+10ml/格）。推出特殊格后探明再决定挖不挖。右键插旗，快捷键 1/2/3。';
+    tip.textContent = '数字=周围「雷+事件+原料」总数，四种都藏着。推出特殊格→探=认出种类→挖=雷扣盾/事件触发/原料收集。旗=免费标记。右键插旗，快捷键 1/2/3。';
     ctx.panel.append(tip);
   },
   exit(ctx) {
@@ -616,6 +626,13 @@ export const dive = {
         const def = EVENTS[probe.event];
         eventPops.push({ index, sprite: get(def.icon), age: 0 });
         showToast(ctx, `认出 ${def.name} · 挖开才触发`, 'buff');
+        delay = 0.35;
+      } else if (probe.kind === 'resource') {
+        ctx.audio.play('probe');
+        eventPops.push({ index, sprite: get(probe.resource), age: 0 });
+        const label = probe.resource === 'water' ? '水' : '星尘';
+        const unit = probe.resource === 'water' ? 'ml' : 'g';
+        showToast(ctx, `认出 ${label} +${probe.amount}${unit} · 挖开才收集`, 'buff');
         delay = 0.35;
       } else {
         shownRevealed.add(index);

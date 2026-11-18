@@ -52,7 +52,7 @@ test('② board：雷数精确、首击格非雷非事件、邻域无雷可含�
   // v2 首击：格子本身保证安全（非雷非事件），邻域允许事件 → adj=邻格事件数
   assert.equal(cells[FIRST].mine, false);
   assert.equal(cells[FIRST].event, null);
-  assert.equal(cells[FIRST].adj, neighbors(FIRST, cfg.width, cfg.height).filter((n) => cells[n].event).length);
+  assert.equal(cells[FIRST].adj, neighbors(FIRST, cfg.width, cfg.height).filter((n) => cells[n].event || cells[n].content).length);
   for (let i = 0; i < cells.length; i++) {
     if (cells[i].mine) continue;
     const x = i % cfg.width;
@@ -65,7 +65,7 @@ test('② board：雷数精确、首击格非雷非事件、邻域无雷可含�
         if (dx === 0 && dy === 0) continue;
         if (nx < 0 || nx >= cfg.width || ny < 0 || ny >= cfg.height) continue;
         const n = cells[ny * cfg.width + nx];
-        if (n.mine || n.event) count++;
+        if (n.mine || n.event || n.content) count++;
       }
     }
     assert.equal(cells[i].adj, count);
@@ -84,11 +84,12 @@ test('② board：雷数精确、首击格非雷非事件、邻域无雷可含�
   const dust = l2.cells.filter((c) => c.content?.type === 'stardust');
   assert.equal(dust.length, CONFIG.floors[2].stardust.length);
   assert.equal(dust.reduce((s, c) => s + c.content.amount, 0), CONFIG.floors[2].stardust.reduce((s, v) => s + v, 0));
-  assert.equal(l2.cells.filter((c) => c.mine).length, 18);
+  assert.equal(l2.cells.filter((c) => c.mine).length, CONFIG.floors[2].mines);
 });
 
-test('②b v2 数字语义：原料格/出口不计入 adj；事件计入 adj；首击格多 seed 恒非特殊', () => {
+test('②b v6 数字语义：雷/事件/原料都计入 adj、出口不计；首击格多 seed 恒非雷非事件', () => {
   let eventOnlyNumber = 0;
+  let resourceContribution = 0;
   let firstNeighborEvent = 0;
   for (let seed = 1; seed <= 40; seed++) {
     for (const floor of [1, 2]) {
@@ -104,16 +105,17 @@ test('②b v2 数字语义：原料格/出口不计入 adj；事件计入 adj；
         const c = cells[i];
         if (c.mine) continue;
         const around = neighbors(i, cfg.width, cfg.height);
-        const specials = around.filter((n) => cells[n].mine || cells[n].event).length;
-        assert.equal(c.adj, specials, `格 ${i} adj 应=邻格雷+事件数`);
-        // 原料与出口不是特殊格：它们存在不影响邻居数字（暴力重算已覆盖），
-        // 且它们自身的 adj 也按同一规则计算
+        const specials = around.filter((n) => cells[n].mine || cells[n].event || cells[n].content).length;
+        assert.equal(c.adj, specials, `格 ${i} adj 应=邻格雷+事件+原料数`);
+        if (around.some((n) => cells[n].content)) resourceContribution++;
         if (around.some((n) => cells[n].event) && !around.some((n) => cells[n].mine) && c.adj > 0) eventOnlyNumber++;
       }
       assert.equal(cells[exit].event, null);
+      assert.equal(cells[exit].content, null);
     }
   }
   assert.ok(eventOnlyNumber > 0, '应存在仅由事件贡献的数字格');
+  assert.ok(resourceContribution > 0, '原料应计入邻居数字（v6 推理层）');
   assert.ok(firstNeighborEvent > 0, '首击邻域应允许出现事件（不再必 0）');
 });
 
@@ -238,7 +240,7 @@ test('⑤ 雷：护盾−1 永久明雷、known 雷再点不触发、归零死�
   assert.ok(dead.effects.some((e) => e.type === 'death'));
   const settled = applyAction(dead.state, { type: 'settle' });
   assert.equal(settled.state.status, 'settled');
-  assert.equal(settled.state.settlement.completion, 0.5 * (40 / 60));
+  assert.equal(settled.state.settlement.completion, 0.5 * Math.min(40 / CONFIG.recipe.water, 1));
 });
 
 test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留、carried 清空', () => {
@@ -267,23 +269,24 @@ test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留
   assert.equal(leave.state.status, 'extracted');
 });
 
-test('⑦ recipe：完成度分段 0/50%/100%、折扣取整、余料折钱', () => {
+test('⑦ recipe：完成度分段 0/50%/100%、折扣取整、余料折钱（配置驱动）', () => {
+  const W = CONFIG.recipe.water, D = CONFIG.recipe.stardust;
   assert.equal(completion({ water: 0, stardust: 0 }), 0);
-  assert.equal(completion({ water: 60, stardust: 0 }), 0.5);
-  assert.equal(completion({ water: 0, stardust: 6 }), 0.5);
-  assert.equal(completion({ water: 60, stardust: 6 }), 1);
+  assert.equal(completion({ water: W, stardust: 0 }), 0.5);
+  assert.equal(completion({ water: 0, stardust: D }), 0.5);
+  assert.equal(completion({ water: W, stardust: D }), 1);
   assert.equal(completion({ water: 999, stardust: 999 }), 1);
-  assert.equal(completion({ water: 30, stardust: 3 }), 0.5);
+  assert.equal(completion({ water: W / 2, stardust: D / 2 }), 0.5);
   assert.equal(discountedPrice(0), 100);
   assert.equal(discountedPrice(0.5), 50);
   assert.equal(discountedPrice(1), 0);
-  assert.equal(discountedPrice(completion({ water: 20, stardust: 2 })), 67);
-  assert.equal(surplusCoins({ water: 30, stardust: 3 }), 0);
-  assert.equal(surplusCoins({ water: 80, stardust: 10 }), 20 * 1 + 4 * 5);
-  const full = settleRecipe({ water: 60, stardust: 6 });
+  assert.equal(discountedPrice(completion({ water: W / 3, stardust: D / 3 })), 67);
+  assert.equal(surplusCoins({ water: W - 10, stardust: D - 1 }), 0);
+  assert.equal(surplusCoins({ water: W + 20, stardust: D + 4 }), 20 * 1 + 4 * 5);
+  const full = settleRecipe({ water: W, stardust: D });
   assert.equal(full.fulfilled, true);
   assert.equal(full.price, 0);
-  assert.equal(settleRecipe({ water: 60, stardust: 0 }).fulfilled, false);
+  assert.equal(settleRecipe({ water: W, stardust: 0 }).fulfilled, false);
 });
 
 test('⑧ reducer：Object.freeze 输入不抛错且原状态不变', () => {
@@ -795,7 +798,14 @@ test('㉖ probe 安全格：单格翻开不连锁；原料格拾取；出口格�
   const res = state.board.cells.findIndex((c, i) => c.content && !c.revealed && !c.picked);
   assert.ok(res >= 0, '应存在未拾取原料格');
   const content = state.board.cells[res].content;
-  const got = probe(state, res);
+  // v6：probe 原料 = 认出种类但不收集（revealed 仍 false）
+  const probedRes = probe(state, res);
+  assert.equal(probedRes.state.board.cells[res].probed, true);
+  assert.equal(probedRes.state.board.cells[res].revealed, false);
+  assert.equal(probedRes.state.carried[content.type], state.carried[content.type]);
+  assert.equal(probedRes.effects.find((e) => e.type === 'probe').kind, 'resource');
+  // 挖开才收集
+  const got = scan(probedRes.state, res);
   assert.equal(got.state.board.cells[res].picked, true);
   assert.equal(got.state.board.cells[res].revealed, true);
   assert.equal(got.state.carried[content.type], state.carried[content.type] + content.amount);
@@ -904,7 +914,7 @@ test('㉙ save v2：probed/flagged/known roundtrip；旧档缺字段默认 false
 test('㉚ warehouse：余料入库累加、sanitize 拒非法、空仓库为 0', () => {
   const empty = EMPTY_WAREHOUSE();
   assert.deepEqual(empty, { water: 0, stardust: 0 });
-  const s = settleRecipe({ water: 90, stardust: 10 });
+  const s = settleRecipe({ water: CONFIG.recipe.water + 30, stardust: CONFIG.recipe.stardust + 4 });
   assert.equal(s.surplusWater, 30);
   assert.equal(s.surplusStardust, 4);
   const w1 = depositWarehouse(empty, s);
@@ -933,38 +943,37 @@ test('㉛ save：settlement.banked roundtrip，旧档缺省 false（防重复入
   assert.equal(restored.run.settlement.banked, false);
 });
 
-test('㉜ v5 原料探索：连锁只揭示不赠送、点击已揭示原料免费收集、离层自动收走可见原料', () => {
+test('㉜ v6 原料=特殊格：连锁不揭示特殊格、probe 认出原料、挖开才收集', () => {
   const cfg = CONFIG.floors[1];
   let setup = null;
   for (let seed = 1; seed <= 300 && !setup; seed++) {
     const { cells } = generateBoard(cfg, seed, FIRST);
-    if (cells[FIRST].adj !== 0) continue;
+    if (cells[FIRST].adj !== 0 || cells[FIRST].content || cells[FIRST].event) continue;
     const chain = revealChain(cells, cfg.width, cfg.height, FIRST);
-    const loot = chain.find((i) => i !== FIRST && cells[i].content);
-    if (loot !== undefined) setup = { seed, loot };
+    if (chain.length > 1) setup = { seed, chain };
   }
-  assert.ok(setup, '应找到首击0连锁且含原料的 seed');
+  assert.ok(setup, '应找到首击为纯0空格且连锁>1 的 seed');
+  // 连锁只揭示纯空/数字空格，绝不揭示雷/事件/原料
+  for (const i of setup.chain) {
+    const c = generateBoard(cfg, setup.seed, FIRST).cells[i];
+    assert.equal(c.mine || c.event || c.content, null, `连锁格 ${i} 不应是特殊格`);
+  }
   const run = createRun({ wish: 'relief', seed: setup.seed });
   const opened = scan(run, FIRST);
-  const oc = opened.state.board.cells;
-  assert.equal(oc[setup.loot].revealed, true, '连锁应揭示原料');
-  assert.equal(oc[setup.loot].picked, false, '连锁不应自动拾取非点击格原料');
-  const amount = oc[setup.loot].content.amount;
-  const type = oc[setup.loot].content.type;
-  assert.equal(opened.state.carried[type], run.carried[type] + (oc[FIRST].content ? oc[FIRST].content.amount : 0), '只自动收集点击格');
-
-  const grabbed = scan(opened.state, setup.loot);
-  assert.equal(grabbed.state.board.cells[setup.loot].picked, true);
-  assert.equal(grabbed.state.carried[type], opened.state.carried[type] + amount);
-  assert.equal(grabbed.state.stamina, opened.state.stamina, '收集已揭示原料不耗体力');
-  assert.ok(grabbed.effects.some((e) => e.type === 'pickup' && e.index === setup.loot));
-
-  // 离层自动收走仍可见未拾取的原料
-  const left = opened.state.board.cells.findIndex((c, i) => c.revealed && c.content && !c.picked && i !== setup.loot);
-  const atExit = scan(grabbed.state, grabbed.state.board.exit);
-  assert.equal(atExit.state.status, 'extract-ready');
-  if (left >= 0) {
-    const lc = grabbed.state.board.cells[left].content;
-    assert.ok(atExit.state.stored[lc.type] >= grabbed.state.stored[lc.type] + grabbed.state.carried[lc.type] + lc.amount, '离层应收走可见原料');
-  }
+  const res = opened.state.board.cells.findIndex((c) => c.content && !c.revealed);
+  assert.ok(res >= 0);
+  const content = opened.state.board.cells[res].content;
+  // 原料藏着：连锁后仍未揭示
+  assert.equal(opened.state.board.cells[res].revealed, false);
+  // probe 认出种类但不收集
+  const pr = probe(opened.state, res);
+  assert.equal(pr.state.board.cells[res].probed, true);
+  assert.equal(pr.state.board.cells[res].revealed, false);
+  assert.equal(pr.effects.find((e) => e.type === 'probe').kind, 'resource');
+  assert.equal(pr.state.carried[content.type], opened.state.carried[content.type]);
+  // 挖开才收集
+  const dug = scan(pr.state, res);
+  assert.equal(dug.state.board.cells[res].picked, true);
+  assert.equal(dug.state.carried[content.type], opened.state.carried[content.type] + content.amount);
+  assert.ok(dug.effects.some((e) => e.type === 'pickup' && e.index === res));
 });
