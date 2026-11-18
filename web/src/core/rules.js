@@ -28,13 +28,25 @@ function rejected(state, reason) {
 }
 
 function deposit(state) {
+  // v5：离层时自动收走「已揭示但未拾取」的原料（看见的都能带走，不浪费）
+  let carried = { ...state.carried };
+  let cells = state.board.cells;
+  if (cells) {
+    cells = cells.map((c) => {
+      if (c.revealed && c.content && !c.picked) {
+        carried[c.content.type] += c.content.amount;
+        return { ...c, picked: true };
+      }
+      return c;
+    });
+  }
   const stored = {
-    water: state.stored.water + state.carried.water,
-    stardust: state.stored.stardust + state.carried.stardust,
+    water: state.stored.water + carried.water,
+    stardust: state.stored.stardust + carried.stardust,
   };
-  const moved = { ...state.carried };
+  const moved = { ...carried };
   return {
-    next: { ...state, stored, carried: EMPTY() },
+    next: { ...state, board: { ...state.board, cells }, stored, carried: EMPTY() },
     effect: { type: 'deposit', moved, stored },
   };
 }
@@ -65,6 +77,14 @@ function applyScan(state, index) {
     rngState = generated.rngState;
   }
   const cell = board.cells[index];
+  // v5：已揭示但未收集的原料 → 点击免费拾取（连锁只揭示不赠送，逐格收集）
+  if (cell.revealed && cell.content && !cell.picked) {
+    const cells = board.cells.slice();
+    cells[index] = { ...cell, picked: true };
+    const carried = { ...state.carried, [cell.content.type]: state.carried[cell.content.type] + cell.content.amount };
+    const next = { ...state, board: { ...board, cells }, carried };
+    return { state: next, effects: [{ type: 'pickup', index, resource: cell.content.type, amount: cell.content.amount }] };
+  }
   if (cell.revealed || cell.known) return rejected(state, 'already-open');
 
   const active = state.interference && state.interference.remaining > 0 ? state.interference : null;
@@ -91,7 +111,8 @@ function applyScan(state, index) {
     effects.push({ type: 'reveals', indices: chain });
     for (const i of chain) {
       const c = cells[i];
-      if (c.content && !c.picked) {
+      // v5：连锁只自动收集「被点击格」，其余原料揭示后留在原地待逐格拾取
+      if (c.content && !c.picked && i === index) {
         cells[i] = { ...c, picked: true };
         const carried = { ...next.carried, [c.content.type]: next.carried[c.content.type] + c.content.amount };
         next = { ...next, carried };

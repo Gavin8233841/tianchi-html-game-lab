@@ -246,8 +246,9 @@ test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留
   const before = { stored: { ...run.stored }, carried: { ...run.carried }, shield: run.shield };
   const atExit = scan(run, run.board.exit);
   assert.equal(atExit.state.status, 'extract-ready');
-  assert.equal(atExit.state.stored.water, before.stored.water + before.carried.water);
-  assert.equal(atExit.state.stored.stardust, before.stored.stardust + before.carried.stardust);
+  // v5：离层自动收走已揭示未拾取原料，故 stored ≥ carried 转账
+  assert.ok(atExit.state.stored.water >= before.stored.water + before.carried.water);
+  assert.ok(atExit.state.stored.stardust >= before.stored.stardust + before.carried.stardust);
   assert.deepEqual(atExit.state.carried, { water: 0, stardust: 0 });
   assert.ok(atExit.effects.some((e) => e.type === 'exit'));
   assert.ok(atExit.effects.some((e) => e.type === 'deposit'));
@@ -805,7 +806,7 @@ test('㉖ probe 安全格：单格翻开不连锁；原料格拾取；出口格�
   assert.equal(atExit.state.board.cells[exit].revealed, true);
   assert.equal(atExit.state.board.cells[exit].probed, true);
   assert.deepEqual(atExit.state.carried, { water: 0, stardust: 0 });
-  assert.equal(atExit.state.stored.water, got.state.stored.water + got.state.carried.water);
+  assert.ok(atExit.state.stored.water >= got.state.stored.water + got.state.carried.water);
   assert.ok(atExit.effects.some((e) => e.type === 'exit'));
   assert.ok(atExit.effects.some((e) => e.type === 'deposit'));
   // 已 revealed 格再 probe 拒绝
@@ -930,4 +931,40 @@ test('㉛ save：settlement.banked roundtrip，旧档缺省 false（防重复入
   const restored = deserialize(legacy);
   assert.ok(restored);
   assert.equal(restored.run.settlement.banked, false);
+});
+
+test('㉜ v5 原料探索：连锁只揭示不赠送、点击已揭示原料免费收集、离层自动收走可见原料', () => {
+  const cfg = CONFIG.floors[1];
+  let setup = null;
+  for (let seed = 1; seed <= 300 && !setup; seed++) {
+    const { cells } = generateBoard(cfg, seed, FIRST);
+    if (cells[FIRST].adj !== 0) continue;
+    const chain = revealChain(cells, cfg.width, cfg.height, FIRST);
+    const loot = chain.find((i) => i !== FIRST && cells[i].content);
+    if (loot !== undefined) setup = { seed, loot };
+  }
+  assert.ok(setup, '应找到首击0连锁且含原料的 seed');
+  const run = createRun({ wish: 'relief', seed: setup.seed });
+  const opened = scan(run, FIRST);
+  const oc = opened.state.board.cells;
+  assert.equal(oc[setup.loot].revealed, true, '连锁应揭示原料');
+  assert.equal(oc[setup.loot].picked, false, '连锁不应自动拾取非点击格原料');
+  const amount = oc[setup.loot].content.amount;
+  const type = oc[setup.loot].content.type;
+  assert.equal(opened.state.carried[type], run.carried[type] + (oc[FIRST].content ? oc[FIRST].content.amount : 0), '只自动收集点击格');
+
+  const grabbed = scan(opened.state, setup.loot);
+  assert.equal(grabbed.state.board.cells[setup.loot].picked, true);
+  assert.equal(grabbed.state.carried[type], opened.state.carried[type] + amount);
+  assert.equal(grabbed.state.stamina, opened.state.stamina, '收集已揭示原料不耗体力');
+  assert.ok(grabbed.effects.some((e) => e.type === 'pickup' && e.index === setup.loot));
+
+  // 离层自动收走仍可见未拾取的原料
+  const left = opened.state.board.cells.findIndex((c, i) => c.revealed && c.content && !c.picked && i !== setup.loot);
+  const atExit = scan(grabbed.state, grabbed.state.board.exit);
+  assert.equal(atExit.state.status, 'extract-ready');
+  if (left >= 0) {
+    const lc = grabbed.state.board.cells[left].content;
+    assert.ok(atExit.state.stored[lc.type] >= grabbed.state.stored[lc.type] + grabbed.state.carried[lc.type] + lc.amount, '离层应收走可见原料');
+  }
 });
