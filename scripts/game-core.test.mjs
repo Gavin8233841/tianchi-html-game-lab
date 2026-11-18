@@ -5,9 +5,13 @@ import { mulberry32, shuffle } from '../web/src/core/rng.js';
 import { generateBoard, revealChain, neighbors } from '../web/src/core/board.js';
 import { createRun, applyAction } from '../web/src/core/rules.js';
 import { EVENTS, applyEvent } from '../web/src/core/events.js';
-import { completion, discountedPrice, surplusCoins, settleRecipe } from '../web/src/core/recipe.js';
+import { completion, discountedPrice } from '../web/src/core/recipe.js';
 import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
-import { EMPTY_WAREHOUSE, depositWarehouse, sanitizeWarehouse } from '../web/src/core/warehouse.js';
+import { EMPTY_WAREHOUSE, sanitizeWarehouse } from '../web/src/core/warehouse.js';
+import {
+  SYMBOL_IDS, CHARADE_WISHES, WISH_BY_ID, directionScore, interpret, moodFor,
+  startBar, applyBarAction, availableMaterials, MATCH_CAP,
+} from '../web/src/core/charades.js';
 
 const SEED = 20261118;
 const FIRST = 27;
@@ -25,7 +29,7 @@ function scan(state, index) {
 }
 
 function openedRun(seed = SEED, first = FIRST) {
-  const run = createRun({ wish: 'relief', seed });
+  const run = createRun({ wish: 'home', seed });
   return scan(run, first).state;
 }
 
@@ -160,7 +164,7 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
   const numberIndex = chain.find((i) => cells[i].adj > 0);
   assert.deepEqual(revealChain(cells, cfg.width, cfg.height, numberIndex), [numberIndex]);
 
-  const run = createRun({ wish: 'fun', seed: zeroSeed });
+  const run = createRun({ wish: 'brave', seed: zeroSeed });
   const { state, effects } = scan(run, FIRST);
   const eventStamina = effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0);
   assert.equal(state.stamina, run.stamina - 1 + eventStamina);
@@ -171,7 +175,7 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
   // 首击 adj>0（邻域有事件）时：只揭首击格本身，不连锁
   const board2 = generateBoard(cfg, SEED, FIRST);
   if (board2.cells[FIRST].adj > 0) {
-    const run2 = createRun({ wish: 'fun', seed: SEED });
+    const run2 = createRun({ wish: 'brave', seed: SEED });
     const r2 = scan(run2, FIRST);
     const reveals2 = r2.effects.find((e) => e.type === 'reveals');
     assert.deepEqual(reveals2.indices, [FIRST]);
@@ -180,7 +184,7 @@ test('③ BFS：只揭可达 0 连通域+边界数字格，绝不揭雷，序稳
 });
 
 test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 carried→stored', () => {
-  const run = createRun({ wish: 'relief', seed: SEED });
+  const run = createRun({ wish: 'home', seed: SEED });
   const first = scan(run, FIRST);
   const firstEventStamina = first.effects.filter((e) => e.type === 'event').reduce((s, e) => s + (e.delta.stamina || 0), 0);
   assert.equal(first.state.stamina, CONFIG.floors[1].stamina - 1 + firstEventStamina);
@@ -210,7 +214,7 @@ test('④ scan：扣 1 体力、已开格/体力 0 拒绝、耗尽紧急撤离 c
   assert.ok(effects.some((e) => e.type === 'deposit'));
   const extracted = applyAction(state, { type: 'extract' }).state;
   assert.equal(extracted.status, 'extracted');
-  assert.equal(applyAction(extracted, { type: 'settle' }).state.status, 'settled');
+  assert.equal(barSettle(extracted).state.status, 'settled');
 });
 
 test('⑤ 雷：护盾−1 永久明雷、known 雷再点不触发、归零死亡 carried=0 stored 不变仍进结算', () => {
@@ -238,9 +242,12 @@ test('⑤ 雷：护盾−1 永久明雷、known 雷再点不触发、归零死�
   assert.deepEqual(dead.state.carried, { water: 0, stardust: 0 });
   assert.deepEqual(dead.state.stored, { water: 40, stardust: 0 });
   assert.ok(dead.effects.some((e) => e.type === 'death'));
-  const settled = applyAction(dead.state, { type: 'settle' });
+  // 死亡不终局：照样酒吧台比划结算（空 tableau → 方向 0 → 怪酒，料被用掉）
+  const settled = barSettle(dead.state);
   assert.equal(settled.state.status, 'settled');
-  assert.equal(settled.state.settlement.completion, 0.5 * Math.min(40 / CONFIG.recipe.water, 1));
+  assert.equal(settled.state.settlement.match, 0);
+  assert.equal(settled.state.settlement.tier, 'weird');
+  assert.equal(settled.state.settlement.used.water, 40);
 });
 
 test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留、carried 清空', () => {
@@ -269,7 +276,7 @@ test('⑥ 出口：carried→stored 转账；descend 体力回满、护盾保留
   assert.equal(leave.state.status, 'extracted');
 });
 
-test('⑦ recipe：完成度分段 0/50%/100%、折扣取整、余料折钱（配置驱动）', () => {
+test('⑦ recipe：完成度分段 0/50%/100%、折扣取整（配置驱动）', () => {
   const W = CONFIG.recipe.water, D = CONFIG.recipe.stardust;
   assert.equal(completion({ water: 0, stardust: 0 }), 0);
   assert.equal(completion({ water: W, stardust: 0 }), 0.5);
@@ -281,16 +288,10 @@ test('⑦ recipe：完成度分段 0/50%/100%、折扣取整、余料折钱（�
   assert.equal(discountedPrice(0.5), 50);
   assert.equal(discountedPrice(1), 0);
   assert.equal(discountedPrice(completion({ water: W / 3, stardust: D / 3 })), 67);
-  assert.equal(surplusCoins({ water: W - 10, stardust: D - 1 }), 0);
-  assert.equal(surplusCoins({ water: W + 20, stardust: D + 4 }), 20 * 1 + 4 * 5);
-  const full = settleRecipe({ water: W, stardust: D });
-  assert.equal(full.fulfilled, true);
-  assert.equal(full.price, 0);
-  assert.equal(settleRecipe({ water: W, stardust: 0 }).fulfilled, false);
 });
 
 test('⑧ reducer：Object.freeze 输入不抛错且原状态不变', () => {
-  const run = deepFreeze(createRun({ wish: 'fun', seed: SEED }));
+  const run = deepFreeze(createRun({ wish: 'brave', seed: SEED }));
   const snapshot = JSON.stringify(run);
   const first = scan(run, FIRST);
   assert.equal(JSON.stringify(run), snapshot);
@@ -302,7 +303,7 @@ test('⑧ reducer：Object.freeze 输入不抛错且原状态不变', () => {
   const down = applyAction(deepFreeze(atExit.state), { type: 'descend' });
   assert.equal(down.state.floor, 2);
   const extracted = applyAction(deepFreeze(atExit.state), { type: 'extract' }).state;
-  const settled = applyAction(deepFreeze(extracted), { type: 'settle' });
+  const settled = barSettle(deepFreeze(extracted));
   assert.equal(settled.state.status, 'settled');
   assert.equal(JSON.stringify(run), snapshot);
 });
@@ -320,12 +321,22 @@ test('save 骨架：roundtrip 可校验，坏档/版本不符拒绝', () => {
   assert.equal(validate(null), false);
 });
 
+// 吧台结算助手：摆指定符号（≤3）→ 确认 → 喝。空符号=方向0的怪酒。
+function barSettle(run, warehouse = EMPTY_WAREHOUSE(), syms = []) {
+  let state = startBar(run);
+  state = { ...state, bar: { ...state.bar, hand: syms.map((sym) => ({ sym, hidden: false })) } };
+  for (let i = 0; i < syms.length; i++) {
+    state = applyBarAction(state, { type: 'place', index: 0 }).state;
+  }
+  state = applyBarAction(state, { type: 'confirm' }).state;
+  return applyBarAction(state, { type: 'drink', warehouse });
+}
+
 function settledRun() {
   let run = openedRun();
   run = scan(run, run.board.exit).state;
   run = applyAction(run, { type: 'extract' }).state;
-  run = applyAction(run, { type: 'settle' }).state;
-  return run;
+  return barSettle(run, EMPTY_WAREHOUSE(), ['house', 'road']).state;
 }
 
 test('⑨ save roundtrip：serialize→deserialize 深相等（board.cells/carried/stored/rngState/settlement）', () => {
@@ -864,7 +875,7 @@ test('㉘ flag：切换 flagged、不耗体力、不改逻辑字段、已开格�
   assert.deepEqual(off.effects, [{ type: 'flag', index: t, on: false }]);
   const revealedIndex = run.board.cells.findIndex((c) => c.revealed);
   assert.equal(flag(run, revealedIndex).effects[0].type, 'rejected');
-  assert.equal(flag(createRun({ wish: 'fun', seed: SEED }), 0).effects[0].reason, 'no-board');
+  assert.equal(flag(createRun({ wish: 'brave', seed: SEED }), 0).effects[0].reason, 'no-board');
   // 标记过的安全格仍可正常 scan（flag 无逻辑效果）
   const safe = run.board.cells.findIndex((c, i) => !c.mine && !c.event && !c.revealed && i !== run.board.exit && c.adj > 0);
   const flagged = flag(run, safe).state;
@@ -911,25 +922,23 @@ test('㉙ save v2：probed/flagged/known roundtrip；旧档缺字段默认 false
     assert.equal(c.flagged, false);
   }
 });
-test('㉚ warehouse：余料入库累加、sanitize 拒非法、空仓库为 0', () => {
+test('㉚ warehouse：吧台消耗后 warehouseAfter 成为仓库新值、sanitize 拒非法、空仓库为 0', () => {
   const empty = EMPTY_WAREHOUSE();
   assert.deepEqual(empty, { water: 0, stardust: 0 });
-  const s = settleRecipe({ water: CONFIG.recipe.water + 30, stardust: CONFIG.recipe.stardust + 4 });
-  assert.equal(s.surplusWater, 30);
-  assert.equal(s.surplusStardust, 4);
-  const w1 = depositWarehouse(empty, s);
-  assert.deepEqual(w1, { water: 30, stardust: 4 });
-  const w2 = depositWarehouse(w1, s);
-  assert.deepEqual(w2, { water: 60, stardust: 8 });
+  const run = { ...createRun({ wish: 'home', seed: 42 }), status: 'extracted' };
+  const { state } = barSettle(run, { water: 100, stardust: 10 }, ['house', 'road']);
+  const s = state.settlement;
+  assert.deepEqual(s.used, { water: CONFIG.recipe.water, stardust: CONFIG.recipe.stardust });
+  assert.deepEqual(s.warehouseAfter, { water: 100 - CONFIG.recipe.water, stardust: 10 - CONFIG.recipe.stardust });
   assert.deepEqual(sanitizeWarehouse(null), empty);
   assert.deepEqual(sanitizeWarehouse({ water: -5, stardust: 'x' }), empty);
   assert.deepEqual(sanitizeWarehouse({ water: 12.9, stardust: 3 }), { water: 12, stardust: 3 });
 });
 
 test('㉛ save：settlement.banked roundtrip，旧档缺省 false（防重复入库标记可持久）', () => {
-  let run = createRun({ wish: 'relief', seed: 42 });
+  let run = createRun({ wish: 'home', seed: 42 });
   run = { ...run, status: 'extracted', stored: { water: 90, stardust: 10 } };
-  run = applyAction(run, { type: 'settle' }).state;
+  run = barSettle(run, EMPTY_WAREHOUSE(), ['house', 'road']).state;
   assert.equal(run.settlement.banked, false);
   const banked = { ...run, settlement: { ...run.settlement, banked: true } };
   const back = deserialize(serialize({ scene: 'result', run: banked }));
@@ -958,7 +967,7 @@ test('㉜ v6 原料=特殊格：连锁不揭示特殊格、probe 认出原料、
     const c = generateBoard(cfg, setup.seed, FIRST).cells[i];
     assert.equal(c.mine || c.event || c.content, null, `连锁格 ${i} 不应是特殊格`);
   }
-  const run = createRun({ wish: 'relief', seed: setup.seed });
+  const run = createRun({ wish: 'home', seed: setup.seed });
   const opened = scan(run, FIRST);
   const res = opened.state.board.cells.findIndex((c) => c.content && !c.revealed);
   assert.ok(res >= 0);
@@ -976,4 +985,161 @@ test('㉜ v6 原料=特殊格：连锁不揭示特殊格、probe 认出原料、
   assert.equal(dug.state.board.cells[res].picked, true);
   assert.equal(dug.state.carried[content.type], opened.state.carried[content.type] + content.amount);
   assert.ok(dug.effects.some((e) => e.type === 'pickup' && e.index === res));
+});
+// ---------- V8：宇宙比划点单（吧台第二幕） ----------
+
+test('㉝ directionScore：核心各50、加分10、陷阱−15、封顶100、去重、未知愿望0', () => {
+  assert.equal(directionScore('home', ['house', 'road']), 100);
+  assert.equal(directionScore('home', ['house', 'road', 'moon', 'star']), 100);
+  assert.equal(directionScore('home', ['house']), 50);
+  assert.equal(directionScore('home', ['house', 'heart']), 35);
+  assert.equal(directionScore('home', ['house', 'house', 'road']), 100);
+  assert.equal(directionScore('home', []), 0);
+  assert.equal(directionScore('nope', ['house']), 0);
+  assert.equal(directionScore('forget', ['water', 'door', 'moon']), 100);
+  assert.equal(directionScore('forget', ['water', 'door', 'heart']), 85);
+  assert.equal(moodFor(100), 'excited');
+  assert.equal(moodFor(50), 'thinking');
+  assert.equal(moodFor(35), 'confused');
+});
+
+test('㉞ interpret：直译表命中（与愿望无关）、乱组合 fallback、空吧台行为艺术', () => {
+  const perfect = interpret('home', ['house', 'road', 'moon']);
+  assert.equal(perfect.drink, '银河巷一号');
+  assert.equal(perfect.mood, 'excited');
+  const unrelated = interpret('home', ['fire', 'water']);
+  assert.equal(unrelated.drink, '岩浆浴');
+  assert.equal(unrelated.mood, 'confused');
+  const weird = interpret('home', ['star', 'heart', 'road']);
+  assert.equal(weird.drink, '未知混合物');
+  const empty = interpret('home', []);
+  assert.ok(empty.text.includes('行为艺术'));
+  assert.equal(empty.drink, '未知混合物');
+});
+
+function rejected0(res) {
+  return res.effects.find((e) => e.type === 'rejected') || null;
+}
+
+test('㉟ bar 动作流：发牌3明1暗、暗牌拒摆、每轮3张上限、收回限本轮、显影耗1星尘、耐心3轮', () => {
+  const base = { ...createRun({ wish: 'home', seed: 7 }), status: 'extracted', stored: { water: 10, stardust: 2 } };
+  let state = startBar(base);
+  assert.equal(state.bar.hand.length, 4);
+  assert.equal(state.bar.hand.filter((c) => c.hidden).length, 1);
+  assert.equal(state.bar.hand[3].hidden, true);
+  assert.equal(state.bar.patience, 3);
+  assert.notEqual(state.rngState, base.rngState);
+  const hiddenIdx = state.bar.hand.findIndex((c) => c.hidden);
+  assert.equal(applyBarAction(state, { type: 'place', index: hiddenIdx }).effects[0].reason, 'card-hidden');
+
+  // 显影：耗 1g 星尘（仓库出），暗牌翻明
+  const revealed = applyBarAction(state, { type: 'reveal', warehouse: { water: 0, stardust: 1 } });
+  assert.equal(rejected0(revealed), null);
+  assert.equal(revealed.state.bar.hand[hiddenIdx].hidden, false);
+  assert.deepEqual(revealed.state.bar.spent, { water: 0, stardust: 1 });
+  assert.equal(availableMaterials(revealed.state, { water: 0, stardust: 1 }).stardust, 2);
+  const poor = applyBarAction({ ...state, stored: { water: 10, stardust: 0 } }, { type: 'reveal', warehouse: EMPTY_WAREHOUSE() });
+  assert.equal(poor.effects[0].reason, 'no-stardust');
+
+  // 每轮至多 3 张
+  let many = { ...state, bar: { ...state.bar, hand: ['star', 'house', 'heart', 'road'].map((sym) => ({ sym, hidden: false })) } };
+  for (let i = 0; i < 3; i++) many = applyBarAction(many, { type: 'place', index: 0 }).state;
+  assert.equal(many.bar.tableau.length, 3);
+  assert.equal(applyBarAction(many, { type: 'place', index: 0 }).effects[0].reason, 'round-full');
+  // 收回本轮的牌
+  const undone = applyBarAction(many, { type: 'unplace', index: 2 });
+  assert.equal(undone.state.bar.tableau.length, 2);
+  assert.equal(undone.state.bar.hand.length, 2);
+
+  // confirm → react；react 中摆牌拒绝
+  let flow = applyBarAction(state, { type: 'place', index: 0 }).state;
+  flow = applyBarAction(flow, { type: 'confirm' }).state;
+  assert.equal(flow.bar.phase, 'react');
+  assert.ok(flow.bar.interpretation && typeof flow.bar.interpretation.text === 'string');
+  assert.equal(applyBarAction(flow, { type: 'place', index: 0 }).effects[0].reason, 'not-placing');
+  assert.equal(applyBarAction(state, { type: 'drink', warehouse: EMPTY_WAREHOUSE() }).effects[0].reason, 'not-reacting');
+
+  // continue：轮数+1 耐心−1、tableau 保留、新手牌、往轮的牌收不回
+  const round2 = applyBarAction(flow, { type: 'continue' }).state;
+  assert.equal(round2.bar.round, 2);
+  assert.equal(round2.bar.patience, 2);
+  assert.equal(round2.bar.placed, 0);
+  assert.equal(round2.bar.hand.length, 4);
+  assert.deepEqual(round2.bar.tableau, flow.bar.tableau);
+  assert.equal(applyBarAction(round2, { type: 'unplace', index: 0 }).effects[0].reason, 'old-card');
+  const r3 = applyBarAction(applyBarAction(round2, { type: 'confirm' }).state, { type: 'continue' }).state;
+  assert.equal(r3.bar.patience, 1);
+  const last = applyBarAction(r3, { type: 'confirm' }).state;
+  assert.equal(applyBarAction(last, { type: 'continue' }).effects[0].reason, 'no-patience');
+});
+
+test('㊱ 双轴匹配：方向×纯度、封顶99、全齐免单、缺口清单、材料点名（浅层/二层/仓库）', () => {
+  const full = {
+    ...createRun({ wish: 'home', seed: 9 }),
+    status: 'extracted',
+    stored: { water: 60, stardust: 6 },
+    provenance: { 1: { water: 60, stardust: 0 }, 2: { water: 0, stardust: 6 } },
+  };
+  const perfect = barSettle(full, EMPTY_WAREHOUSE(), ['house', 'road']).state.settlement;
+  assert.equal(perfect.direction, 100);
+  assert.equal(perfect.purity, 1);
+  assert.equal(perfect.match, MATCH_CAP);
+  assert.equal(perfect.fulfilled, true);
+  assert.equal(perfect.price, 0);
+  assert.equal(perfect.tier, 'fulfilled');
+  assert.deepEqual(perfect.gaps.symbols, []);
+  assert.equal(perfect.gaps.water, 60);
+  assert.equal(perfect.gaps.stardust, 6);
+  assert.ok(perfect.drinkText.includes('浅层'));
+  assert.ok(perfect.drinkText.includes('二层'));
+
+  const half = barSettle({ ...full, stored: { water: 30, stardust: 0 }, provenance: { 1: { water: 30, stardust: 0 }, 2: { water: 0, stardust: 0 } } }, EMPTY_WAREHOUSE(), ['house', 'road']).state.settlement;
+  assert.equal(half.purity, 0.25);
+  assert.equal(half.match, 25);
+  assert.equal(half.tier, 'weird');
+  assert.equal(half.gaps.water, 60);
+
+  const bank = barSettle({ ...full, stored: { water: 0, stardust: 0 }, provenance: { 1: { water: 0, stardust: 0 }, 2: { water: 0, stardust: 0 } } }, { water: 60, stardust: 6 }, ['house', 'road']).state.settlement;
+  assert.equal(bank.match, MATCH_CAP);
+  assert.ok(bank.drinkText.includes('仓库'));
+
+  const trap = barSettle(full, EMPTY_WAREHOUSE(), ['house', 'heart']).state.settlement;
+  assert.equal(trap.direction, 35);
+  assert.equal(trap.match, 35);
+  assert.equal(trap.tier, 'discount');
+  assert.deepEqual(trap.gaps.symbols, ['road']);
+});
+
+test('㊲ save bar：place/react 中途档 roundtrip 深相等，坏 bar/非法符号拒绝，settled 必须带 done bar', () => {
+  const base = { ...createRun({ wish: 'home', seed: 11 }), status: 'extracted', stored: { water: 10, stardust: 2 } };
+  let mid = startBar(base);
+  mid = applyBarAction(mid, { type: 'place', index: 0 }).state;
+  mid = applyBarAction(mid, { type: 'reveal', warehouse: { water: 0, stardust: 1 } }).state;
+  const back = deserialize(serialize({ scene: 'bar', run: mid }));
+  assert.ok(back);
+  assert.equal(validate(back), true);
+  assert.deepEqual(back.run, JSON.parse(JSON.stringify(mid)));
+  const react = applyBarAction(mid, { type: 'confirm' }).state;
+  const back2 = deserialize(serialize({ scene: 'bar', run: react }));
+  assert.deepEqual(back2.run.bar.interpretation, react.bar.interpretation);
+  const badSym = { ...mid, bar: { ...mid.bar, hand: [{ sym: 'hacked', hidden: false }] } };
+  assert.equal(deserialize({ version: SAVE_VERSION, scene: 'bar', savedAt: 1, run: badSym }), null);
+  const settledNoBar = { ...barSettle(base).state, bar: null };
+  assert.equal(deserialize({ version: SAVE_VERSION, scene: 'result', savedAt: 1, run: settledNoBar }), null);
+});
+
+test('㊳ provenance：离层存款按层记账，L1/L2 分别累计（材料点名数据源）', () => {
+  let run = openedRun();
+  run = scan(run, run.board.exit).state;
+  assert.deepEqual(run.provenance[1], run.stored);
+  assert.deepEqual(run.provenance[2], { water: 0, stardust: 0 });
+  run = applyAction(run, { type: 'descend' }).state;
+  run = scan(run, 55).state;
+  run = { ...run, carried: { water: 10, stardust: 1 } };
+  run = scan(run, run.board.exit).state;
+  assert.equal(run.status, 'extract-ready');
+  assert.ok(run.provenance[2].water >= 10);
+  assert.ok(run.provenance[2].stardust >= 1);
+  const back = deserialize(serialize({ scene: 'extract', run }));
+  assert.deepEqual(back.run.provenance, run.provenance);
 });

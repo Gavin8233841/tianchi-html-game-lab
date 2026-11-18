@@ -11,7 +11,7 @@ import { loading } from './scenes/loading.js';
 import { tavern } from './scenes/tavern.js';
 import { dive } from './scenes/dive.js';
 import { extract } from './scenes/extract.js';
-import { mix } from './scenes/mix.js';
+import { bar } from './scenes/bar.js';
 import { result } from './scenes/result.js';
 
 const canvas = document.getElementById('game');
@@ -50,7 +50,7 @@ ctx.commitRun = (state) => {
 };
 
 const machine = createSceneMachine({
-  scenes: { loading, tavern, dive, extract, mix, result },
+  scenes: { loading, tavern, dive, extract, bar, result },
   ctx,
 });
 ctx.input = createInput({ canvas, onPointer: (evt) => machine.onPointer(evt) });

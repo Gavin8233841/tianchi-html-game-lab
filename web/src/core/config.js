@@ -14,7 +14,6 @@ export const CONFIG = {
   probeCost: 1,
   exitFarRatio: 0.3,
   recipe: { water: 60, stardust: 6, basePrice: 100 },
-  surplus: { water: 1, stardust: 5 },
   floors: {
     1: {
       id: 1,

@@ -1,12 +1,5 @@
-// 酒馆仓库：跨局持久库存。结算余料自动入库；本期只存不用（后续酒馆扩展再开放用途）。
+// 酒馆仓库：跨局持久库存。酒吧台结算时算好消耗，warehouseAfter 直接成为仓库新值。
 export const EMPTY_WAREHOUSE = () => ({ water: 0, stardust: 0 });
-
-export function depositWarehouse(warehouse, settlement) {
-  return {
-    water: warehouse.water + settlement.surplusWater,
-    stardust: warehouse.stardust + settlement.surplusStardust,
-  };
-}
 
 export function sanitizeWarehouse(raw) {
   if (!raw || typeof raw !== 'object') return EMPTY_WAREHOUSE();

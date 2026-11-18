@@ -218,10 +218,8 @@ function playRun(seed, strategy, decision) {
       state = applyAction(state, { type: 'extract' }).state;
     } else if (state.status === 'dead') {
       rec.died = true;
-      state = applyAction(state, { type: 'settle' }).state;
       break;
     } else if (state.status === 'extracted') {
-      state = applyAction(state, { type: 'settle' }).state;
       break;
     } else {
       break;

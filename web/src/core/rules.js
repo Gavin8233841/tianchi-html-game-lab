@@ -2,7 +2,6 @@ import { CONFIG } from './config.js';
 import { generateBoard, revealChain } from './board.js';
 import { mulberry32 } from './rng.js';
 import { applyEvent } from './events.js';
-import { settleRecipe } from './recipe.js';
 
 const EMPTY = () => ({ water: 0, stardust: 0 });
 
@@ -16,9 +15,11 @@ export function createRun({ wish, seed }) {
     shield: CONFIG.shield.initial,
     carried: EMPTY(),
     stored: EMPTY(),
+    provenance: { 1: EMPTY(), 2: EMPTY() },
     interference: null,
     board: { width: floor.width, height: floor.height, cells: null, exit: -1 },
     status: 'diving',
+    bar: null,
     settlement: null,
   };
 }
@@ -45,8 +46,15 @@ function deposit(state) {
     stardust: state.stored.stardust + carried.stardust,
   };
   const moved = { ...carried };
+  const provenance = {
+    ...state.provenance,
+    [state.floor]: {
+      water: state.provenance[state.floor].water + moved.water,
+      stardust: state.provenance[state.floor].stardust + moved.stardust,
+    },
+  };
   return {
-    next: { ...state, board: { ...state.board, cells }, stored, carried: EMPTY() },
+    next: { ...state, board: { ...state.board, cells }, stored, provenance, carried: EMPTY() },
     effect: { type: 'deposit', moved, stored },
   };
 }
@@ -242,13 +250,6 @@ function applyExtract(state) {
   return { state: { ...state, status: 'extracted' }, effects: [{ type: 'extract', emergency: state.status === 'emergency' }] };
 }
 
-function applySettle(state) {
-  if (state.status !== 'extracted' && state.status !== 'dead') return rejected(state, 'cannot-settle');
-  const settlement = settleRecipe(state.stored);
-  const next = { ...state, status: 'settled', settlement };
-  return { state: next, effects: [{ type: 'settle', settlement, died: state.status === 'dead' }] };
-}
-
 export function applyAction(state, action) {
   switch (action.type) {
     case 'scan': return applyScan(state, action.index);
@@ -256,7 +257,6 @@ export function applyAction(state, action) {
     case 'flag': return applyFlag(state, action.index);
     case 'descend': return applyDescend(state);
     case 'extract': return applyExtract(state);
-    case 'settle': return applySettle(state);
     default: return rejected(state, 'unknown-action');
   }
 }
