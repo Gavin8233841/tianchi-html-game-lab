@@ -91,7 +91,7 @@ export const dive = {
     if (index < 0) return;
     const { state, effects } = applyAction(run, { type: 'scan', index });
     if (effects.some((e) => e.type === 'rejected')) return;
-    ctx.run = state;
+    ctx.commitRun(state);
     ctx.hud.update(state);
     if (state.status === 'extract-ready') {
       ctx.goto('extract');

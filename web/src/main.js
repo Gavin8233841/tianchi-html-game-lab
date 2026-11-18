@@ -1,6 +1,8 @@
 import { createLoop, createScheduler } from './engine/loop.js';
 import { createSceneMachine } from './engine/scenes.js';
 import { createInput } from './engine/input.js';
+import { createStorage } from './engine/storage.js';
+import { serialize } from './core/save.js';
 import { createHud } from './ui/hud.js';
 import { loading } from './scenes/loading.js';
 import { tavern } from './scenes/tavern.js';
@@ -14,16 +16,31 @@ const panel = document.getElementById('panel');
 const hudRoot = document.getElementById('hud');
 
 const seedParam = new URLSearchParams(location.search).get('seed');
+const storage = createStorage();
 const ctx = {
   canvas,
   g: canvas.getContext('2d'),
   panel,
   hud: createHud(hudRoot),
   scheduler: createScheduler(),
+  storage,
   run: null,
+  currentSceneName: null,
   debugSeed: seedParam !== null && Number.isFinite(Number(seedParam)) ? Number(seedParam) >>> 0 : null,
   goto: null,
   input: null,
+  persist: null,
+  commitRun: null,
+};
+
+ctx.persist = () => {
+  const scene = ctx.currentSceneName;
+  if (!scene || scene === 'loading') return;
+  storage.save(serialize({ scene, run: ctx.run }));
+};
+ctx.commitRun = (state) => {
+  ctx.run = state;
+  ctx.persist();
 };
 
 const machine = createSceneMachine({
@@ -39,6 +56,31 @@ const loop = createLoop({
   },
   render() { machine.render(); },
 });
+
+const onVisibility = () => {
+  if (document.visibilityState === 'hidden') ctx.persist();
+};
+const onPageHide = () => {
+  ctx.persist();
+  detach();
+  loop.stop();
+};
+const onPageShow = (evt) => {
+  if (evt.persisted) {
+    attach();
+    loop.start();
+  }
+};
+function attach() {
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', onPageHide);
+}
+function detach() {
+  document.removeEventListener('visibilitychange', onVisibility);
+  window.removeEventListener('pagehide', onPageHide);
+}
+attach();
+window.addEventListener('pageshow', onPageShow);
 
 ctx.goto('loading', { keepRun: false });
 loop.start();

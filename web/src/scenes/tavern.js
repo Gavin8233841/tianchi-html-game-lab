@@ -19,7 +19,7 @@ export const tavern = {
       button.addEventListener('click', () => {
         button.disabled = true;
         const seed = ctx.debugSeed ?? (Date.now() >>> 0);
-        ctx.run = createRun({ wish: wish.id, seed });
+        ctx.commitRun(createRun({ wish: wish.id, seed }));
         ctx.goto('dive');
       });
       ctx.panel.append(button);

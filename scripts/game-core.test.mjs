@@ -5,7 +5,7 @@ import { mulberry32, shuffle } from '../web/src/core/rng.js';
 import { generateBoard, revealChain, neighbors } from '../web/src/core/board.js';
 import { createRun, applyAction } from '../web/src/core/rules.js';
 import { completion, discountedPrice, surplusCoins, settleRecipe } from '../web/src/core/recipe.js';
-import { serialize, deserialize, validate, SAVE_VERSION } from '../web/src/core/save.js';
+import { serialize, deserialize, validate, migrate, SAVE_VERSION } from '../web/src/core/save.js';
 
 const SEED = 20261118;
 const FIRST = 27;
@@ -256,4 +256,107 @@ test('save 骨架：roundtrip 可校验，坏档/版本不符拒绝', () => {
   assert.equal(validate({ ...data, version: 99 }), false);
   assert.equal(validate({ ...data, run: { ...run, shield: 9 } }), false);
   assert.equal(validate(null), false);
+});
+
+function settledRun() {
+  let run = openedRun();
+  run = scan(run, run.board.exit).state;
+  run = applyAction(run, { type: 'extract' }).state;
+  run = applyAction(run, { type: 'settle' }).state;
+  return run;
+}
+
+test('⑨ save roundtrip：serialize→deserialize 深相等（board.cells/carried/stored/rngState/settlement）', () => {
+  const run = settledRun();
+  assert.equal(run.status, 'settled');
+  assert.ok(run.settlement && Number.isFinite(run.settlement.completion));
+  const obj = serialize({ scene: 'result', run });
+  assert.equal(obj.version, SAVE_VERSION);
+  assert.equal(obj.scene, 'result');
+  assert.ok(Number.isFinite(obj.savedAt));
+  const fromObj = deserialize(obj);
+  assert.equal(validate(fromObj), true);
+  assert.deepEqual(fromObj.run, JSON.parse(JSON.stringify(run)));
+  assert.deepEqual(fromObj.run.board.cells, run.board.cells);
+  assert.deepEqual(fromObj.run.carried, run.carried);
+  assert.deepEqual(fromObj.run.stored, run.stored);
+  assert.equal(fromObj.run.rngState, run.rngState);
+  assert.deepEqual(fromObj.run.settlement, run.settlement);
+  const fromStr = deserialize(JSON.stringify(obj));
+  assert.deepEqual(fromStr.run, JSON.parse(JSON.stringify(run)));
+  const midDive = openedRun();
+  const back = deserialize(serialize({ scene: 'dive', run: midDive }));
+  assert.deepEqual(back.run, JSON.parse(JSON.stringify(midDive)));
+  const tavernSave = deserialize(serialize({ scene: 'tavern', run: null }));
+  assert.equal(validate(tavernSave), true);
+  assert.equal(tavernSave.run, null);
+});
+
+test('⑩ save 坏档：坏 JSON/缺 version/version=999/缺 run/缺 scene → null，migrate 钩子拒旧版', () => {
+  const run = openedRun();
+  const good = serialize({ scene: 'dive', run });
+  assert.equal(deserialize('not json'), null);
+  assert.equal(deserialize('{"version":1,'), null);
+  assert.equal(deserialize('null'), null);
+  assert.equal(deserialize('[]'), null);
+  assert.equal(deserialize('42'), null);
+  assert.equal(deserialize(null), null);
+  assert.equal(deserialize(undefined), null);
+  const { version, ...noVersion } = good;
+  assert.equal(deserialize(noVersion), null);
+  assert.equal(deserialize({ ...good, version: 999 }), null);
+  assert.equal(deserialize({ ...good, version: 0 }), null);
+  const { run: _r, ...noRun } = good;
+  assert.equal(deserialize(noRun), null);
+  const { scene, ...noScene } = good;
+  assert.equal(deserialize(noScene), null);
+  assert.equal(migrate({ version: 0, scene: 'dive', run }), null);
+  assert.equal(migrate(null), null);
+});
+
+test('⑪ save 纯净：序列化结果不含 effects/anim/particles 等演出字段，污染字段被剥离', () => {
+  const run = openedRun();
+  const polluted = { ...run, effects: [{ type: 'reveals' }], anim: { t: 0.5 }, particles: [1, 2], shake: 9 };
+  const obj = serialize({ scene: 'dive', run: polluted });
+  const json = JSON.stringify(obj);
+  assert.ok(!json.includes('effects'));
+  assert.ok(!json.includes('anim'));
+  assert.ok(!json.includes('particles'));
+  assert.ok(!json.includes('shake'));
+  const back = deserialize(obj);
+  assert.deepEqual(back.run, JSON.parse(JSON.stringify(run)));
+  const rawPolluted = { version: SAVE_VERSION, scene: 'dive', savedAt: 1, run: polluted };
+  assert.deepEqual(deserialize(rawPolluted).run, JSON.parse(JSON.stringify(run)));
+});
+
+test('⑫ save clamp：shield 99→3、stamina -5→0、carried 负→0；非法 status/scene/floor 拒绝', () => {
+  const run = openedRun();
+  const base = { version: SAVE_VERSION, scene: 'dive', savedAt: 1 };
+  const clamped = deserialize({ ...base, run: { ...run, shield: 99, stamina: -5, carried: { water: -10, stardust: 2 } } });
+  assert.ok(clamped);
+  assert.equal(clamped.run.shield, CONFIG.shield.max);
+  assert.equal(clamped.run.stamina, 0);
+  assert.deepEqual(clamped.run.carried, { water: 0, stardust: 2 });
+  assert.equal(validate(clamped), true);
+  assert.equal(deserialize({ ...base, run: { ...run, status: 'hacked' } }), null);
+  assert.equal(deserialize({ ...base, scene: 'nowhere', run }), null);
+  assert.equal(deserialize({ ...base, run: { ...run, floor: 99 } }), null);
+  assert.equal(deserialize({ ...base, run: { ...run, board: { ...run.board, width: 3 } } }), null);
+});
+
+test('⑬ save 真实续玩：createRun+多次 applyAction 后 roundtrip，恢复后可继续 scan 且结果一致', () => {
+  const run = openedRun();
+  const safe = run.board.cells.findIndex((c, i) => !c.mine && !c.revealed && i !== run.board.exit
+    && !revealChain(run.board.cells, 8, 8, i).includes(run.board.exit));
+  assert.ok(safe >= 0);
+  const restored = deserialize(serialize({ scene: 'dive', run })).run;
+  assert.equal(restored.rngState, run.rngState);
+  const a = scan(run, safe);
+  const b = scan(restored, safe);
+  assert.deepEqual(b.state, a.state);
+  assert.deepEqual(b.effects, a.effects);
+  const settled = settledRun();
+  const back = deserialize(serialize({ scene: 'result', run: settled })).run;
+  assert.deepEqual(back.settlement, settled.settlement);
+  assert.equal(applyAction(back, { type: 'settle' }).effects[0].type, 'rejected');
 });

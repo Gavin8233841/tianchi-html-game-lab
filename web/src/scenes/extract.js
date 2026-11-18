@@ -17,7 +17,7 @@ export const extract = {
       for (const b of ctx.panel.querySelectorAll('button')) b.disabled = true;
       const { state, effects } = applyAction(ctx.run, action);
       if (effects.some((e) => e.type === 'rejected')) { used = false; return; }
-      ctx.run = state;
+      ctx.commitRun(state);
       ctx.goto(target);
     };
 

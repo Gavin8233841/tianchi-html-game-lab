@@ -11,11 +11,14 @@ export function createSceneMachine({ scenes, ctx }) {
   let current = null;
   let name = null;
   ctx.goto = (target, opts = {}) => {
+    if (opts.keepRun === false && target === 'tavern' && ctx.storage) ctx.storage.clear();
     cleanupGameState(ctx, { keepRun: opts.keepRun !== false });
     if (current && current.exit) current.exit(ctx);
     name = target;
+    ctx.currentSceneName = name;
     current = scenes[target];
     if (current.enter) current.enter(ctx);
+    if (ctx.persist) ctx.persist();
   };
   return {
     get name() { return name; },

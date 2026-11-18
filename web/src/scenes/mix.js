@@ -10,7 +10,7 @@ export const mix = {
     let run = ctx.run;
     if (run.status === 'emergency') {
       run = applyAction(run, { type: 'extract' }).state;
-      ctx.run = run;
+      ctx.commitRun(run);
     }
     const title = document.createElement('h2');
     title.textContent = '回到酒馆';
@@ -29,7 +29,7 @@ export const mix = {
     ctx.scheduler.after(1.2, () => {
       const { state, effects } = applyAction(ctx.run, { type: 'settle' });
       if (effects.some((e) => e.type === 'rejected')) return;
-      ctx.run = state;
+      ctx.commitRun(state);
       ctx.goto('result');
     });
   },
