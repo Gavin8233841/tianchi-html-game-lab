@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang='zh-CN'>
+  <head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>
+    <meta name='theme-color' content='#173f38'>
+    <title>课桌下的宇宙</title>
+    <link rel='stylesheet' href='style.css'>
+  </head>
+  <body>
+    <main id='game-shell' aria-label='课桌下的宇宙游戏'>
+      <canvas id='classroom' aria-label='教室场景'></canvas>
+      <header id='hud' class='hud is-hidden' aria-live='polite'>
+        <div class='hud-item score-box'><span>脑洞值</span><strong id='score'>0</strong></div>
+        <div class='hud-item lesson-box'><span id='lesson-count'>第 1 节</span><strong id='lesson-name'>数学课</strong></div>
+        <div class='hud-item time-box'><span>距离下课</span><strong id='time-left'>0:27</strong></div>
+        <div class='hud-item strike-box'><span>纪律记录</span><strong id='strikes' aria-label='零次被抓'><i></i><i></i><i></i></strong></div>
+        <div class='lesson-progress' aria-hidden='true'><i id='lesson-progress-fill'></i></div>
+      </header>
+      <div id='danger-cues' class='danger-cues' aria-live='assertive'>
+        <div class='danger-cue' data-watcher='teacher'><b>!</b><span>老师要回头了</span></div>
+        <div class='danger-cue' data-watcher='corridor'><b>!</b><span>走廊有脚步</span></div>
+        <div class='danger-cue' data-watcher='monitor'><b>!</b><span>班长在看你</span></div>
+      </div>
+      <div id='banner' class='banner' aria-live='assertive'></div>
+      <div id='activity' class='activity is-hidden'>认真听课</div>
+      <div id='hold-prompt' class='hold-prompt is-hidden'>按住 · 开小差</div>
+      <button id='sound-toggle' class='icon-button' type='button' aria-label='关闭声音' title='声音'>♪</button>
+      <section id='screen' class='screen'>
+        <div class='screen-copy'>
+          <p class='eyebrow'>学生时代生存练习</p>
+          <h1>课桌下的宇宙</h1>
+          <p class='tagline'>老师转身以后，四十五分钟可以很长。</p>
+          <button id='start-button' class='primary-button' type='button'>开始上课</button>
+          <p id='best-score' class='best-score'></p>
+        </div>
+      </section>
+    </main>
+    <script type='module' src='game.js'></script>
+  </body>
+</html>
