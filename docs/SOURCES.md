@@ -43,3 +43,4 @@
 | [KilledByAPixel/LittleJS](https://github.com/KilledByAPixel/LittleJS) | MIT | 粒子发射器设计（对象池、上限控制、按事件类型发射） | `web/src/engine/particles.js` 独立实现 |
 | [Robert Penner 缓动函数](http://robertpenner.com/easing/) | BSD | easeOutCubic/easeOutBack 等缓动公式（数学公式级参考） | `web/src/engine/fx.js` |
 | [Fix Your Timestep!（Gaffer On Games）](https://gafferongames.com/post/fix_your_timestep/) | 文章思路参考 | 固定步长累加器循环、delta 钳制 | `web/src/engine/loop.js` 独立实现 |
+| [回声 · 摸鱼大师](https://zhgarylu.github.io/everyday-game/moyu/) | 仓库未声明许可证；只作思路级参考 | 按住持续获益、预警时松手、被抓累积惩罚的节奏 | `web/classroom-slacking/` 从零独立实现；未复制其源码、Three.js 场景、音频、文案或视觉资产 |
