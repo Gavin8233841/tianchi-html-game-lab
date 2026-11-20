@@ -32,6 +32,11 @@
             <button id='doodle-undo' type='button' title='Z'>撤销</button>
             <button id='doodle-clear' type='button'>清空</button>
           </div>
+          <div id='comic-actions' class='action-group is-hidden'>
+            <button type='button' data-comic-move='previous-page' aria-label='上一格'>←</button>
+            <button type='button' data-comic-move='next-page' aria-label='下一格'>→</button>
+            <button id='comic-next-story' class='is-hidden' type='button' data-comic-move='next-story'>下一篇</button>
+          </div>
           <div id='plane-actions' class='action-group is-hidden'>
             <button type='button' data-throw='short'>短投 +80</button>
             <button type='button' data-throw='far'>远投 +260</button>

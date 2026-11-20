@@ -16,6 +16,8 @@ import {
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
+import { drawComicPage } from './comic-art.js';
+import { COMIC, COMIC_STORIES, comicConfiscated, comicEnding } from './comics.js';
 import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, canStartSpin, spinDelta } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
@@ -34,6 +36,10 @@ const bannerEl = document.getElementById('banner');
 const promptEl = document.getElementById('hold-prompt');
 const controls = document.getElementById('desk-controls');
 const doodleActions = document.getElementById('doodle-actions');
+const comicActions = document.getElementById('comic-actions');
+const comicPrevious = comicActions.querySelector('[data-comic-move="previous-page"]');
+const comicNext = comicActions.querySelector('[data-comic-move="next-page"]');
+const comicNextStory = document.getElementById('comic-next-story');
 const consoleActions = document.getElementById('console-actions');
 const planeActions = document.getElementById('plane-actions');
 const stowButton = document.getElementById('stow-tool');
@@ -44,6 +50,8 @@ const screen = document.getElementById('screen');
 const toolDock = document.getElementById('tool-dock');
 const handheldButton = toolDock.querySelector('[data-tool="console"]');
 const handheldLabel = handheldButton.querySelector('span');
+const comicButton = toolDock.querySelector('[data-tool="comic"]');
+const comicLabel = comicButton.querySelector('span');
 const bestScoreEl = document.getElementById('best-score');
 const soundButton = document.getElementById('sound-toggle');
 const cueEls = Object.fromEntries(
@@ -52,6 +60,7 @@ const cueEls = Object.fromEntries(
 
 const BEST_KEY = 'classroom_slacking_best_v3';
 const MEMORY_KEY = 'classroom_slacking_memories_v3';
+const COMICS_KEY = 'classroom_slacking_comics';
 const WATCHER_NAMES = { teacher: '老师', corridor: '巡课老师', monitor: '班长' };
 const TOOL_NAMES = Object.fromEntries(TOOLS.map((tool) => [tool.id, tool.name]));
 const TOOL_KEYS = Object.fromEntries(TOOLS.map((tool, index) => [`Digit${index + 1}`, tool.id]));
@@ -60,6 +69,7 @@ let state = null;
 let pointerId = null;
 let lastPoint = null;
 let pointerStart = null;
+let comicAxis = null;
 let deskDrag = null;
 let spinAngle = 0;
 let spinFlash = 0;
@@ -73,6 +83,8 @@ let corridorPresence = 0;
 let monitorTurn = 0;
 let muted = false;
 let best = loadBest();
+let readerStory = null;
+let readerPage = 0;
 
 function loadBest() {
   try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch { return 0; }
@@ -84,6 +96,14 @@ function loadMemories() {
 
 function saveMemories(memories) {
   try { localStorage.setItem(MEMORY_KEY, JSON.stringify(memories)); } catch { /* Optional local collection. */ }
+}
+
+function loadComics() {
+  try { return JSON.parse(localStorage.getItem(COMICS_KEY) || '[]'); } catch { return []; }
+}
+
+function saveComics() {
+  try { localStorage.setItem(COMICS_KEY, JSON.stringify(state.comic.collected)); } catch { /* Optional local collection. */ }
 }
 
 function saveBest(value) {
@@ -99,6 +119,17 @@ function showBanner(text, seconds = 1.2) {
 function formatTime(seconds) {
   const whole = Math.max(0, Math.ceil(seconds));
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+function updateComicControls(locked) {
+  const comic = state.comic;
+  const pageOpen = comic.open >= COMIC.openForPage;
+  const ending = comicEnding(comic);
+  comicActions.classList.toggle('is-hidden', state.activeTool !== 'comic' || !pageOpen);
+  comicPrevious.disabled = locked || comic.page === 0;
+  comicNext.disabled = locked || ending;
+  comicNextStory.disabled = locked;
+  comicNextStory.classList.toggle('is-hidden', !ending || !comic.finished || comic.story >= COMIC_STORIES.length - 1);
 }
 
 function updateHud() {
@@ -122,6 +153,7 @@ function updateHud() {
   controls.classList.toggle('is-hidden', !playing);
   shell.classList.toggle('is-playing', playing);
   doodleActions.classList.toggle('is-hidden', state.activeTool !== 'doodle');
+  updateComicControls(locked);
   planeActions.classList.toggle('is-hidden', state.activeTool !== 'plane' || !ready);
   consoleActions.classList.toggle('is-hidden', state.activeTool !== 'console');
   undoButton.disabled = clearButton.disabled = doodleStrokes.length === 0;
@@ -140,7 +172,13 @@ function updateHud() {
     if (state.snack.crunch > 0) promptEl.textContent = '嚼嚼嚼…';
     else promptEl.textContent = state.snack.open ? '把辣条往上拖 ↑' : '沿袋口横向拉开 →';
   }
-  else if (state.activeTool === 'comic') promptEl.textContent = state.comicOpen > 0.06 ? '向上拖 · 藏回桌洞' : '向下拖 · 打开漫画';
+  else if (state.activeTool === 'comic') {
+    const comic = state.comic;
+    if (comic.open < COMIC.openForPage) promptEl.textContent = comic.page ? '下拉继续看 ↓' : '下拉打开漫画 ↓';
+    else if (!comicEnding(comic)) promptEl.textContent = '横划翻页 · 上推收好';
+    else if (!comic.finished && comic.open < COMIC.openForEnding) promptEl.textContent = '再往下拉看结尾 ↓';
+    else promptEl.textContent = comic.finished ? '读完了 · 上推收好' : '看到结尾了';
+  }
   else if (state.activeTool === 'plane') {
     const arrow = PLANE_FOLDS[state.planeFolds] === -1 ? '←' : '→';
     promptEl.textContent = ready ? '向上甩可短投' : state.planeFlight ? '飞机飞出去了' : `沿 ${arrow} 划一下 · ${state.planeFolds}/${PLANE_FOLDS.length}`;
@@ -151,12 +189,18 @@ function updateHud() {
   for (const button of toolDock.querySelectorAll('.tool-button')) {
     button.classList.toggle('is-active', button.dataset.tool === state.activeTool);
     button.setAttribute('aria-pressed', String(button.dataset.tool === state.activeTool));
-    button.disabled = locked || (button === handheldButton && state.handheld.confiscated);
+    button.disabled = locked || (button === handheldButton && state.handheld.confiscated) ||
+      (button === comicButton && comicConfiscated(state.comic));
   }
   handheldButton.classList.toggle('is-confiscated', state.handheld.confiscated);
   handheldButton.title = state.handheld.confiscated ? '掌机已没收，下节课归还' : '掌机 · 7';
   const handheldText = state.handheld.confiscated ? '已没收' : '掌机';
   if (handheldLabel.textContent !== handheldText) handheldLabel.textContent = handheldText;
+  const lostComic = comicConfiscated(state.comic);
+  comicButton.classList.toggle('is-confiscated', lostComic);
+  comicButton.title = lostComic ? '漫画本局已没收' : '桌洞漫画 · 5';
+  const comicText = lostComic ? '已没收' : '漫画';
+  if (comicLabel.textContent !== comicText) comicLabel.textContent = comicText;
   for (const watcher of state.watchers) {
     const cue = cueEls[watcher.key];
     cue.classList.toggle('is-active', watcher.mode === 'warn' || watcher.mode === 'look');
@@ -184,6 +228,7 @@ function showEndScreen(won) {
   const score = Math.floor(state.score);
   saveBest(score);
   saveMemories(state.memories);
+  saveComics();
   bannerTimer = 0;
   bannerEl.textContent = '';
   screen.classList.remove('is-hidden');
@@ -196,9 +241,50 @@ function showEndScreen(won) {
       <p class='score-line'>${score.toLocaleString('zh-CN')}</p>
       <p class='tagline'>${scoreRank(score)} · 被抓 ${state.strikes} 次<br>回忆已收集 ${state.memories.length} / ${MEMORIES.length}</p>
       <div class='memory-strip'>${memoryDots || '<i class="memory-dot">?</i>'}</div>
-      <div class='end-actions'><button id='download-card' class='secondary-button' type='button'>保存成绩单</button><button id='restart-button' class='primary-button' type='button'>再来一天</button></div>
+      <div class='end-actions'>
+        ${state.comic.collected.length ? '<button id="comic-library" class="secondary-button" type="button">重看漫画</button>' : ''}
+        <button id='download-card' class='secondary-button' type='button'>保存成绩单</button>
+        <button id='restart-button' class='primary-button' type='button'>再来一天</button>
+      </div>
       <p class='best-score'>本机最高 ${best.toLocaleString('zh-CN')}</p>
     </div>`;
+}
+
+function showComicLibrary() {
+  const stories = COMIC_STORIES.filter((story) => state.comic.collected.includes(story.id));
+  screen.innerHTML = `
+    <div class='screen-copy comic-reader'>
+      <h1>桌洞漫画</h1>
+      <div class='comic-reader-actions'>
+        ${stories.map((story) => `<button class='secondary-button' type='button' data-comic-story='${story.id}'>${story.title}</button>`).join('')}
+        <button id='comic-results' class='secondary-button' type='button'>返回结算</button>
+      </div>
+    </div>`;
+  screen.querySelector('button')?.focus();
+}
+
+function showComicReader() {
+  screen.innerHTML = `
+    <div class='screen-copy comic-reader'>
+      <canvas id='comic-canvas' width='${COMIC.width * 2}' height='${COMIC.height * 2}' role='img'></canvas>
+      <div class='comic-reader-actions'>
+        <button class='secondary-button' type='button' data-reader-turn='-1'>上一格</button>
+        <button class='secondary-button' type='button' data-reader-turn='1'>下一格</button>
+        <button id='comic-library' class='secondary-button' type='button'>返回漫画</button>
+      </div>
+    </div>`;
+  refreshComicReader();
+  screen.querySelector('[data-reader-turn="1"]').focus();
+}
+
+function refreshComicReader() {
+  const readerCanvas = screen.querySelector('#comic-canvas');
+  const context = readerCanvas.getContext('2d');
+  drawComicPage(context, readerStory, readerPage, 0, 0, 2);
+  const page = readerStory.pages[readerPage];
+  readerCanvas.setAttribute('aria-label', `${readerStory.title} 第 ${readerPage + 1} 格，${page.line}`);
+  screen.querySelector('[data-reader-turn="-1"]').disabled = readerPage === 0;
+  screen.querySelector('[data-reader-turn="1"]').disabled = readerPage === readerStory.pages.length - 1;
 }
 
 function hideScreen() {
@@ -225,7 +311,10 @@ function processEvents(events) {
     }
     else if (event.type === 'snack-crunch') audio.crunch();
     else if (event.type === 'snack-finished') showBanner('包装袋藏好了！', 0.8);
-    else if (event.type === 'comic-open') { showBanner('漫画翻到关键页', 0.8); audio.page(); }
+    else if (event.type === 'comic-open' || event.type === 'comic-page') audio.page();
+    else if (event.type === 'comic-finished') { saveComics(); showBanner(`读完一篇 · +${event.bonus}`, 1.2); audio.near(); }
+    else if (event.type === 'comic-bookmarked') showBanner('漫画收好 · 书签还在', 1.6);
+    else if (event.type === 'comic-confiscated') showBanner('漫画被没收 · 本局锁定', 2);
     else if (event.type === 'plane-folded') showBanner('折好了！', 0.65);
     else if (event.type === 'plane-fold') audio.paper();
     else if (event.type === 'plane-thrown') {
@@ -252,7 +341,8 @@ function processEvents(events) {
 
 function startGame() {
   audio.unlock();
-  state = createGameState({ memories: loadMemories() });
+  state = createGameState({ memories: loadMemories(), comics: loadComics() });
+  readerStory = null;
   resetPointer();
   doodleStrokes = [];
   spinAngle = 0;
@@ -283,13 +373,19 @@ function downloadShareCard() {
 
 function cycleTool(direction) {
   if (!state) return;
-  const available = state.handheld.confiscated ? TOOLS.filter((tool) => tool.id !== 'console') : TOOLS;
+  const available = TOOLS.filter((tool) =>
+    !(tool.id === 'console' && state.handheld.confiscated) &&
+    !(tool.id === 'comic' && comicConfiscated(state.comic)));
   const index = available.findIndex((tool) => tool.id === state.activeTool);
   const next = available[(index + direction + available.length) % available.length];
   selectTool(next.id);
 }
 
 function selectTool(toolId) {
+  if (toolId === 'comic' && state && comicConfiscated(state.comic)) {
+    showBanner('漫画本局已没收', 0.9);
+    return false;
+  }
   if (toolId === 'console' && state?.handheld.confiscated) {
     showBanner('掌机下节课归还', 0.9);
     return false;
@@ -305,6 +401,20 @@ screen.addEventListener('click', (event) => {
   if (event.target.closest('#continue-button')) { continueLesson(); return; }
   if (event.target.closest('#restart-button')) { startGame(); return; }
   if (event.target.closest('#download-card')) downloadShareCard();
+  if (event.target.closest('#comic-library')) { showComicLibrary(); return; }
+  if (event.target.closest('#comic-results')) { showEndScreen(state.phase === 'won'); return; }
+  const selection = event.target.closest('[data-comic-story]')?.dataset.comicStory;
+  if (selection && state.comic.collected.includes(selection)) {
+    readerStory = COMIC_STORIES.find((story) => story.id === selection);
+    readerPage = 0;
+    showComicReader();
+    return;
+  }
+  const turn = event.target.closest('[data-reader-turn]');
+  if (turn && readerStory) {
+    readerPage = Math.max(0, Math.min(readerStory.pages.length - 1, readerPage + Number(turn.dataset.readerTurn)));
+    refreshComicReader();
+  }
 });
 document.getElementById('start-button').addEventListener('click', startGame);
 bestScoreEl.textContent = best ? `本机最高脑洞值 ${best.toLocaleString('zh-CN')}` : '';
@@ -337,6 +447,10 @@ function eraseDrawing(all = false) {
 stowButton.addEventListener('click', packUp);
 undoButton.addEventListener('click', () => eraseDrawing());
 clearButton.addEventListener('click', () => eraseDrawing(true));
+comicActions.addEventListener('click', (event) => {
+  const move = event.target.closest('[data-comic-move]')?.dataset.comicMove;
+  if (move) processEvents(applyGesture(state, 'comic', move));
+});
 planeActions.addEventListener('click', (event) => {
   const button = event.target.closest('[data-throw]');
   if (button) launchPlane(button.dataset.throw);
@@ -376,6 +490,8 @@ function handlePointerDown(event) {
   if (state.activeTool === 'doodle' && !onPaper(point)) return;
   if (state.activeTool === 'spin' && !canStartSpin(point)) return;
   if (state.activeTool === 'plane' && (Math.abs(point.x - 480) > 118 || Math.abs(point.y - 520) > 83)) return;
+  if (state.activeTool === 'comic' && (Math.abs(point.x - COMIC.x) > COMIC.width / 2 + 12 ||
+      Math.abs(point.y - COMIC.y) > COMIC.height / 2 + 22)) return;
   if (state.activeTool === 'note') {
     if (!nearNote(point) || state.note.handoff > 0) return;
     if (state.note.incoming) {
@@ -431,6 +547,19 @@ function trackSpin(event) {
   }
 }
 
+function trackComic(point) {
+  if (!comicAxis) {
+    const dx = Math.abs(point.x - pointerStart.x);
+    const dy = Math.abs(point.y - pointerStart.y);
+    if (Math.max(dx, dy) < 12) return;
+    comicAxis = dx > dy ? 'horizontal' : 'vertical';
+    if (comicAxis === 'vertical') processEvents(applyGesture(state, 'comic', (point.y - pointerStart.y) / 150));
+  } else if (comicAxis === 'vertical') {
+    processEvents(applyGesture(state, 'comic', (point.y - lastPoint.y) / 150));
+  }
+  lastPoint = point;
+}
+
 function handlePointerMove(event) {
   if (!state || event.pointerId !== pointerId || state.phase !== 'playing') return;
   if (state.activeTool === 'spin') {
@@ -454,8 +583,9 @@ function handlePointerMove(event) {
     processEvents(applyGesture(state, 'doodle', distance / 100));
   } else if (deskDrag) {
     updateDeskDrag(point);
-  } else if (state.activeTool === 'comic' && lastPoint) {
-    processEvents(applyGesture(state, 'comic', (point.y - lastPoint.y) / 180));
+  } else if (state.activeTool === 'comic') {
+    trackComic(point);
+    return;
   }
   lastPoint = point;
 }
@@ -463,6 +593,14 @@ function handlePointerMove(event) {
 function releasePointer(event) {
   if (!state || event.pointerId !== pointerId) return;
   if (event.type === 'pointerup' && state.activeTool === 'spin') trackSpin(event);
+  if (event.type === 'pointerup' && state.activeTool === 'comic') {
+    const point = pointFromEvent(event);
+    trackComic(point);
+    const dx = point.x - pointerStart.x;
+    if (comicAxis === 'horizontal' && Math.abs(dx) >= 48) {
+      processEvents(applyGesture(state, 'comic', dx < 0 ? 'next-page' : 'previous-page'));
+    }
+  }
   if (event.type === 'pointerup' && deskDrag) finishDeskDrag(event, pointFromEvent(event));
   if (event.type === 'pointerup' && state.activeTool === 'plane') {
     const end = pointFromEvent(event);
@@ -479,6 +617,7 @@ function resetPointer(releaseCapture = true) {
   const released = pointerId;
   pointerId = null;
   lastPoint = pointerStart = null;
+  comicAxis = null;
   deskDrag = null;
   activeStroke = null;
   if (releaseCapture && released !== null && canvas.hasPointerCapture?.(released)) canvas.releasePointerCapture(released);
@@ -519,6 +658,10 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   const arrow = event.key || event.code;
+  if (state.activeTool === 'comic' && (arrow === 'ArrowLeft' || arrow === 'ArrowRight')) {
+    event.preventDefault();
+    if (!event.repeat) processEvents(applyGesture(state, 'comic', arrow === 'ArrowLeft' ? 'previous-page' : 'next-page'));
+  }
   if (state.activeTool === 'console' && (arrow === 'ArrowLeft' || arrow === 'ArrowRight')) {
     event.preventDefault();
     processEvents(applyGesture(state, 'console', arrow === 'ArrowLeft' ? -1 : 1));

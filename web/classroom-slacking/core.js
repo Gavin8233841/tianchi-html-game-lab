@@ -1,5 +1,6 @@
 import { PLANE_FLIGHT, PLANE_FOLDS, SNACK, advanceHandheld, createHandheld, moveHandheld } from './desk-actions.js';
 import { CLASS_NOTES, createNoteState } from './classmate-notes.js';
+import { COMIC, COMIC_STORIES, comicConfiscated, comicEnding, createComicState } from './comics.js';
 
 export const LESSONS = Object.freeze([
   Object.freeze({
@@ -123,7 +124,7 @@ export function createGameState(options = {}, maybeRandom = Math.random) {
     phase: 'playing', lessonIndex: 0, lessonTime: 0, score: 0, strikes: 0,
     activeTool: TOOLS[0].id, inputActive: false, performing: false,
     actionIntensity: 0, actionFresh: 0, stowTimer: 0, combo: 1,
-    suspicion: 0, focusLock: 0, sinceFocused: 99, comicOpen: 0,
+    suspicion: 0, focusLock: 0, sinceFocused: 99, comic: createComicState(config.comics),
     snack: { open: false, bites: 0, crunch: 0 },
     planeFolds: 0, planeFlight: null, farThrowUsed: false, handheld: createHandheld(),
     doodleProgress: 0, spinTurnBuffer: 0, lastSpinTurnAt: -Infinity,
@@ -148,11 +149,13 @@ export function startNextLesson(state, random = Math.random) {
 
 function clearAction(state, packing = 0) {
   if (state.handheld.active) state.handheld.packing = packing;
+  if (state.comic.open > 0.06) state.comic.packing = packing;
   state.inputActive = false;
   state.performing = false;
   state.actionIntensity = 0;
   state.actionFresh = 0;
-  state.comicOpen = 0;
+  state.comic.open = 0;
+  state.comic.endingTime = 0;
   state.planeFolds = 0;
   state.handheld.active = false;
   state.spinTurnBuffer = 0;
@@ -161,7 +164,8 @@ function clearAction(state, packing = 0) {
 
 export function setActiveTool(state, toolId) {
   if (state.phase !== 'playing' || !TOOLS.some((tool) => tool.id === toolId) || state.activeTool === toolId ||
-      (toolId === 'console' && state.handheld.confiscated)) return false;
+      (toolId === 'console' && state.handheld.confiscated) ||
+      (toolId === 'comic' && comicConfiscated(state.comic))) return false;
   const oldTool = toolById(state.activeTool);
   const packing = oldTool.hide * 0.62;
   if (isExposed(state)) state.stowTimer = Math.max(state.stowTimer, packing);
@@ -266,6 +270,37 @@ function playSnack(state, move, events) {
   }
 }
 
+function playComic(state, move, events) {
+  const comic = state.comic;
+  if (comicConfiscated(comic)) return;
+  if (move === 'next-page' || move === 'previous-page' || move === 'next-story') {
+    if (comic.open < COMIC.openForPage) return;
+    if (move === 'next-story') {
+      if (!comic.finished || !comicEnding(comic) || comic.story >= COMIC_STORIES.length - 1) return;
+      comic.story += 1;
+      comic.page = 0;
+      comic.finished = false;
+    } else {
+      const direction = move === 'next-page' ? 1 : -1;
+      const page = clamp(comic.page + direction, 0, COMIC_STORIES[comic.story].pages.length - 1);
+      if (page === comic.page) return;
+      comic.page = page;
+    }
+    comic.endingTime = 0;
+    events.push({ type: 'comic-page' });
+    return;
+  }
+  if (!Number.isFinite(move)) return;
+  const before = comic.open;
+  comic.open = clamp(before + move, 0, 1);
+  if (before < COMIC.openForPage && comic.open >= COMIC.openForPage) events.push({ type: 'comic-open' });
+  if (before > 0.06 && comic.open <= 0.06) {
+    comic.open = 0;
+    state.sinceFocused = 0;
+    events.push({ type: 'focused' });
+  }
+}
+
 export function applyGesture(state, kind, amount, random = Math.random) {
   const events = [];
   if (state.phase !== 'playing' || state.focusLock > 0 || kind !== state.activeTool) return events;
@@ -305,20 +340,7 @@ export function applyGesture(state, kind, amount, random = Math.random) {
   } else if (kind === 'snack') {
     playSnack(state, amount, events);
   } else if (kind === 'comic') {
-    const before = state.comicOpen;
-    state.comicOpen = clamp(state.comicOpen + value, 0, 1);
-    state.performing = state.comicOpen > 0.06;
-    state.actionIntensity = state.comicOpen;
-    if (before < 0.72 && state.comicOpen >= 0.72) {
-      events.push({ type: 'comic-open' });
-      unlockMemory(state, 'desk-diver', events);
-    }
-    if (before > 0.06 && state.comicOpen <= 0.06) {
-      state.comicOpen = 0;
-      state.performing = false;
-      state.sinceFocused = 0;
-      events.push({ type: 'focused' });
-    }
+    playComic(state, amount, events);
   } else if (kind === 'plane') {
     if (state.planeFlight || value !== PLANE_FOLDS[state.planeFolds]) return events;
     state.planeFolds += 1;
@@ -332,15 +354,17 @@ export function applyGesture(state, kind, amount, random = Math.random) {
 
 export function isExposed(state) {
   if (!state || state.phase !== 'playing') return false;
-  return state.stowTimer > 0 || state.inputActive || state.performing || state.comicOpen > 0.06 || state.handheld.active;
+  return state.stowTimer > 0 || state.inputActive || state.performing || state.comic.open > 0.06 || state.handheld.active;
 }
 
 function catchPlayer(state, watcher, events) {
   const usingHandheld = state.handheld.active || state.handheld.packing > 0;
+  const usingComic = state.comic.open > 0.06 || state.comic.packing > 0;
   state.strikes += 1;
   state.lastCaughtBy = watcher?.key || 'teacher';
   clearAction(state);
   state.handheld.packing = 0;
+  state.comic.packing = 0;
   state.stowTimer = 0;
   state.combo = 1;
   state.focusLock = 1.45;
@@ -358,6 +382,15 @@ function catchPlayer(state, watcher, events) {
     state.handheld.confiscated = true;
     if (state.activeTool === 'console') state.activeTool = 'spin';
     events.push({ type: 'handheld-confiscated' });
+  }
+  if (usingComic) {
+    state.comic.catches += 1;
+    if (comicConfiscated(state.comic)) {
+      if (state.activeTool === 'comic') state.activeTool = 'spin';
+      events.push({ type: 'comic-confiscated' });
+    } else {
+      events.push({ type: 'comic-bookmarked' });
+    }
   }
   if (state.strikes >= MAX_STRIKES) {
     state.phase = 'lost';
@@ -456,6 +489,22 @@ function updateNote(state, step, events) {
   events.push({ type: 'note-reply' });
 }
 
+function updateComic(state, step, events) {
+  const comic = state.comic;
+  if (comic.finished || !comicEnding(comic) || comic.open < COMIC.openForEnding || state.focusLock > 0) {
+    comic.endingTime = 0;
+    return;
+  }
+  comic.endingTime += step;
+  if (comic.endingTime < COMIC.endingSeconds) return;
+  comic.finished = true;
+  const id = COMIC_STORIES[comic.story].id;
+  if (!comic.collected.includes(id)) comic.collected.push(id);
+  state.score += COMIC.bonus;
+  unlockMemory(state, 'desk-diver', events);
+  events.push({ type: 'comic-finished', bonus: COMIC.bonus });
+}
+
 export function updateGame(state, dt, random = Math.random) {
   const events = [];
   const step = clamp(Number(dt) || 0, 0, 0.08);
@@ -464,6 +513,7 @@ export function updateGame(state, dt, random = Math.random) {
   state.focusLock = Math.max(0, state.focusLock - step);
   state.snack.crunch = Math.max(0, state.snack.crunch - step);
   state.handheld.packing = Math.max(0, state.handheld.packing - step);
+  state.comic.packing = Math.max(0, state.comic.packing - step);
   state.actionFresh = Math.max(0, state.actionFresh - step);
   if (state.speechTimer > 0) state.speechTimer = Math.max(0, state.speechTimer - step);
   if (!state.inputActive && state.activeTool !== 'comic') state.performing = false;
@@ -474,14 +524,14 @@ export function updateGame(state, dt, random = Math.random) {
 
   let effort = 0;
   if (state.activeTool === 'comic') {
-    effort = state.comicOpen;
+    effort = state.comic.open;
     if (effort > 0.06) state.stats.comicSeconds += step;
   } else if (state.handheld.active) {
     effort = 0.45;
   } else if (state.actionFresh > 0 && (state.inputActive || state.performing)) {
     effort = clamp(state.actionIntensity, 0, 1);
   }
-  state.actionIntensity = Math.max(state.activeTool === 'comic' ? state.comicOpen : 0, state.actionIntensity - step * 2.25);
+  state.actionIntensity = Math.max(0, state.actionIntensity - step * 2.25);
 
   if (effort > 0.04 && state.focusLock <= 0) {
     const tool = toolById(state.activeTool);
@@ -532,6 +582,7 @@ export function updateGame(state, dt, random = Math.random) {
     state.planeFlight.remaining -= step;
     if (state.planeFlight.remaining <= 0) state.planeFlight = null;
   }
+  updateComic(state, step, events);
   updateNote(state, step, events);
 
   state.lessonTime += step;

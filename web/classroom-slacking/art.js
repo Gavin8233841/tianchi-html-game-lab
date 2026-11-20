@@ -1,4 +1,5 @@
 import { LESSONS, MEMORIES } from './core.js';
+import { drawComicOnDesk } from './comic-art.js';
 import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, SPIN } from './desk-actions.js';
 
 export const LOGICAL_W = 960;
@@ -673,43 +674,6 @@ function drawHands(ctx, scene) {
   }
 }
 
-function drawComicDrawer(ctx, scene) {
-  const open = scene.state?.comicOpen || 0;
-  if (open <= 0.01 && scene.state?.activeTool !== 'comic') return;
-  const y = 520 + open * 94;
-  ctx.save();
-  ctx.fillStyle = '#3c281d';
-  roundedRect(ctx, 265, y - 26, 430, 142, 11);
-  ctx.fill();
-  ctx.fillStyle = '#543a29';
-  ctx.fillRect(285, y - 12, 390, 101);
-  ctx.fillStyle = '#f2d4a9';
-  ctx.fillRect(338, y - 74, 138, 158);
-  ctx.fillRect(484, y - 74, 138, 158);
-  ctx.strokeStyle = '#3f3a43';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(338, y - 74, 138, 158);
-  ctx.strokeRect(484, y - 74, 138, 158);
-  ctx.fillStyle = '#db553f';
-  ctx.font = '900 34px Microsoft YaHei, sans-serif';
-  ctx.fillText('咚!', 365, y - 24);
-  ctx.strokeStyle = '#354e70';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(550, y - 22, 25, 0, Math.PI * 2);
-  ctx.moveTo(550, y + 3);
-  ctx.lineTo(550, y + 49);
-  ctx.moveTo(550, y + 16);
-  ctx.lineTo(517, y + 36);
-  ctx.moveTo(550, y + 16);
-  ctx.lineTo(586, y + 31);
-  ctx.stroke();
-  ctx.fillStyle = '#c7a06c';
-  roundedRect(ctx, 420, y + 88, 120, 16, 8);
-  ctx.fill();
-  ctx.restore();
-}
-
 function drawDanger(ctx, scene) {
   const looking = scene.state?.watchers?.some((watcher) => watcher.mode === 'look');
   if (!looking) return;
@@ -732,8 +696,8 @@ export function renderClassroom(ctx, width, height, scene) {
   ctx.scale(view.scale, view.scale);
   drawRoom(ctx, scene);
   drawNotebook(ctx, scene);
-  drawComicDrawer(ctx, scene);
   drawHands(ctx, scene);
+  if (scene.state?.activeTool === 'comic') drawComicOnDesk(ctx, scene.state.comic, width / view.scale);
   if (scene.state?.planeFlight) drawFlyingPlane(ctx, scene.state.planeFlight);
   drawDanger(ctx, scene);
   ctx.restore();

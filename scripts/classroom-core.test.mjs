@@ -17,6 +17,7 @@ import {
   updateGame,
 } from '../web/classroom-slacking/core.js';
 import { HANDHELD, PLANE_FOLDS, SPIN, canStartSpin, spinDelta } from '../web/classroom-slacking/desk-actions.js';
+import { COMIC, COMIC_STORIES, comicConfiscated } from '../web/classroom-slacking/comics.js';
 
 const fixedRandom = () => 0.5;
 
@@ -55,7 +56,7 @@ test('V3 课堂：空格/Esc 对应的收好动作会清除当前动作但保留
   assert.ok(events.some((event) => event.type === 'packing'));
 });
 
-test('课堂：涂鸦和漫画有独立的完成反馈', () => {
+test('课堂：涂鸦完成后解锁回忆，漫画拉开时有反馈', () => {
   const state = createGameState(fixedRandom);
 
   setActiveTool(state, 'doodle');
@@ -66,7 +67,7 @@ test('课堂：涂鸦和漫画有独立的完成反馈', () => {
   setActiveTool(state, 'comic');
   assert.ok(applyGesture(state, 'comic', 0.9).some((event) => event.type === 'comic-open'));
   assert.ok(state.memories.includes('new-hero'));
-  assert.ok(state.memories.includes('desk-diver'));
+  assert.equal(state.memories.includes('desk-diver'), false);
 });
 
 function quietClassroom(state) {
@@ -81,6 +82,69 @@ function tick(state, seconds) {
   for (let time = 0; time < seconds; time += 0.05) events.push(...updateGame(state, 0.05, fixedRandom));
   return events;
 }
+
+test('漫画：翻阅四格，半开看不到结尾；读完才计奖并保存', () => {
+  const state = createGameState({ comics: ['invalid', COMIC_STORIES[1].id, COMIC_STORIES[1].id] }, fixedRandom);
+  quietClassroom(state);
+  const move = (amount) => applyGesture(state, 'comic', amount);
+  setActiveTool(state, 'comic');
+  assert.deepEqual(move('next-page'), []);
+  assert.deepEqual(state.comic.collected, [COMIC_STORIES[1].id]);
+  move(0.56);
+  for (let index = 0; index < 3; index += 1) assert.equal(move('next-page')[0].type, 'comic-page');
+  assert.equal(state.comic.page, 3);
+  assert.equal(tick(state, 1).some((event) => event.type === 'comic-finished'), false);
+  assert.equal(state.comic.finished, false);
+  assert.deepEqual(move('next-story'), []);
+  move(0.5);
+  const completed = tick(state, 0.8);
+  assert.equal(completed.find((event) => event.type === 'comic-finished').bonus, COMIC.bonus);
+  assert.equal(state.comic.finished, true);
+  assert.ok(state.comic.collected.includes(COMIC_STORIES[0].id));
+  assert.ok(state.memories.includes('desk-diver'));
+  assert.equal(tick(state, 0.8).some((event) => event.type === 'comic-finished'), false);
+  assert.equal(move('next-story')[0].type, 'comic-page');
+  assert.deepEqual([state.comic.story, state.comic.page, state.comic.finished], [1, 0, false]);
+});
+
+test('漫画：第一次被抓保存页码，第二次整局没收，第三节也不能再打开', () => {
+  const otherTool = createGameState(fixedRandom);
+  setInputActive(otherTool, true);
+  Object.assign(otherTool.watchers[0], { mode: 'look', timer: 1 });
+  updateGame(otherTool, 0.05, fixedRandom);
+  assert.equal(otherTool.strikes, 1);
+  assert.equal(otherTool.comic.catches, 0, '其他道具被抓不计入漫画');
+
+  const state = createGameState(fixedRandom);
+  quietClassroom(state);
+  const look = () => Object.assign(state.watchers[0], { mode: 'look', timer: 1 });
+  setActiveTool(state, 'comic');
+  applyGesture(state, 'comic', 0.6);
+  applyGesture(state, 'comic', 'next-page');
+  look();
+  assert.ok(updateGame(state, 0.05, fixedRandom).some((event) => event.type === 'comic-bookmarked'));
+  assert.equal(state.comic.open, 0);
+  assert.equal(state.comic.page, 1);
+  assert.equal(state.strikes, 1);
+  assert.equal(comicConfiscated(state.comic), false);
+
+  finishLesson(state);
+  startNextLesson(state, fixedRandom);
+  quietClassroom(state);
+  assert.equal(state.comic.page, 1);
+  applyGesture(state, 'comic', 0.6);
+  focusNow(state);
+  look();
+  assert.ok(updateGame(state, 0.05, fixedRandom).some((event) => event.type === 'comic-confiscated'));
+  assert.equal(state.strikes, 2);
+  assert.equal(comicConfiscated(state.comic), true);
+  assert.equal(setActiveTool(state, 'comic'), false);
+  assert.deepEqual(applyGesture(state, 'comic', 1), []);
+  finishLesson(state);
+  startNextLesson(state, fixedRandom);
+  assert.equal(setActiveTool(state, 'comic'), false);
+  assert.equal(comicConfiscated(createGameState(fixedRandom).comic), false);
+});
 
 test('纸条：先写后传，发送内容轮换且随课程变化', () => {
   const state = createGameState(fixedRandom);
