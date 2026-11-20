@@ -45,7 +45,7 @@ const server = createServer(async (req, res) => {
 
   if (pathname === '/api/classroom-scores') {
     if (req.method === 'GET' || req.method === 'HEAD') {
-      const payload = JSON.stringify({ scores: normalizeRows(classroomScores) });
+      const payload = JSON.stringify({ scope: 'local', scores: normalizeRows(classroomScores) });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(req.method === 'HEAD' ? undefined : payload);
       return;
@@ -65,7 +65,7 @@ const server = createServer(async (req, res) => {
         score: normalizeScore(payload.score),
       });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ scores: classroomScores }));
+      res.end(JSON.stringify({ scope: 'local', scores: classroomScores }));
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'invalid json' }));
     }

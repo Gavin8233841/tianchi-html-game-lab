@@ -163,12 +163,12 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-function leaderboardMarkup(rows, online) {
+function leaderboardMarkup(rows, online, scope = 'local') {
   const list = rows.length
     ? rows.map((row, index) => `<li><span>${index + 1}</span><span>${escapeHtml(row.nickname)}</span><strong>${row.score.toLocaleString('zh-CN')}</strong></li>`).join('')
     : '<li><span>—</span><span>还没有成绩</span><strong>—</strong></li>';
   return `
-    <div class='leaderboard-head'><span>全球榜</span><small class='leaderboard-status'>${online ? '在线' : '本机 · 待上线'}</small></div>
+    <div class='leaderboard-head'><span>全球榜</span><small class='leaderboard-status'>${online ? scope === 'global' ? '全球在线' : '本地服务' : '本机回退'}</small></div>
     <ol class='leaderboard-list'>${list}</ol>
     <div class='nickname-row'><input id='nickname-input' maxlength='10' value='${escapeHtml(loadNickname())}' aria-label='昵称' placeholder='你的昵称'><button id='submit-score' type='button'>上榜</button></div>`;
 }
@@ -194,10 +194,10 @@ function showEndScreen(won) {
     </div>`;
   const durationMs = Math.max(8000, performance.now() - runStartedAt);
   const run = { durationMs: Math.floor(durationMs), inputs: state.stats.inputs, lessons: state.lessonIndex + (won ? 1 : 0) };
-  leaderboard.list().then(({ rows, online }) => {
+  leaderboard.list().then(({ rows, online, scope }) => {
     const box = document.getElementById('leaderboard-box');
     if (!box || !screen.contains(box)) return;
-    box.innerHTML = leaderboardMarkup(rows, online);
+    box.innerHTML = leaderboardMarkup(rows, online, scope);
     box.dataset.run = JSON.stringify(run);
   });
 }
@@ -271,7 +271,7 @@ async function submitScore() {
   let run;
   try { run = JSON.parse(box.dataset.run || '{}'); } catch { run = {}; }
   const result = await leaderboard.submit(nickname, Math.floor(state.score), run);
-  box.innerHTML = leaderboardMarkup(result.rows, result.online);
+  box.innerHTML = leaderboardMarkup(result.rows, result.online, result.scope);
   box.dataset.run = JSON.stringify(run);
 }
 

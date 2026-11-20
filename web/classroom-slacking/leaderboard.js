@@ -41,19 +41,19 @@ export function createLeaderboard(endpoint = '/api/classroom-scores') {
     if (!response.ok) throw new Error(`leaderboard ${response.status}`);
     const payload = await response.json();
     online = true;
-    return normalizeRows(payload.scores);
+    return { rows: normalizeRows(payload.scores), scope: payload.scope || 'global' };
   }
 
   return {
     get online() { return online; },
     async list() {
       try {
-        const rows = await fetchRemote();
-        writeLocalRows(rows);
-        return { rows, online: true };
+        const remote = await fetchRemote();
+        writeLocalRows(remote.rows);
+        return { ...remote, online: true };
       } catch {
         online = false;
-        return { rows: readLocalRows(), online: false };
+        return { rows: readLocalRows(), online: false, scope: 'local' };
       }
     },
     async submit(nickname, score, run) {
@@ -71,10 +71,10 @@ export function createLeaderboard(endpoint = '/api/classroom-scores') {
         const rows = normalizeRows(payload.scores);
         writeLocalRows(rows);
         online = true;
-        return { rows, online: true };
+        return { rows, online: true, scope: payload.scope || 'global' };
       } catch {
         online = false;
-        return { rows: localRows, online: false };
+        return { rows: localRows, online: false, scope: 'local' };
       }
     },
   };
