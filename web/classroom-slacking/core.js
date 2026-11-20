@@ -1,56 +1,77 @@
 export const LESSONS = Object.freeze([
-  Object.freeze({ id: 'math', title: '数学课', topic: '函数与几何', duration: 34, scoreScale: 1, alertScale: 1, light: 'morning' }),
-  Object.freeze({ id: 'chinese', title: '语文课', topic: '背诵全文', duration: 36, scoreScale: 1.16, alertScale: 0.86, light: 'noon' }),
-  Object.freeze({ id: 'study', title: '自习课', topic: '全班安静', duration: 38, scoreScale: 1.34, alertScale: 0.72, light: 'dusk' }),
+  Object.freeze({
+    id: 'math', title: '数学课', topic: '函数与几何', duration: 58, scoreScale: 1, alertScale: 1,
+    light: 'morning', noiseScale: 0.88, events: ['chalk', 'question', 'fake-bell', 'laugh'],
+    teacherLines: Object.freeze(['后排同学别只盯着桌面。', '看黑板，不要看别的。', '最后一排，手别乱动。']),
+  }),
+  Object.freeze({
+    id: 'chinese', title: '语文课', topic: '背诵全文', duration: 62, scoreScale: 1.16, alertScale: 0.86,
+    light: 'noon', noiseScale: 1, events: ['roll-call', 'question', 'laugh', 'chalk'],
+    teacherLines: Object.freeze(['这句背完我就抽人。', '后排同学，跟着读。', '别以为我没看见。']),
+  }),
+  Object.freeze({
+    id: 'study', title: '自习课', topic: '全班安静', duration: 66, scoreScale: 1.34, alertScale: 0.72,
+    light: 'dusk', noiseScale: 1.34, events: ['quiet', 'monitor', 'fake-bell', 'question'],
+    teacherLines: Object.freeze(['自习课要安静。', '班长，记一下声音大的。', '谁在桌洞里忙呢？']),
+  }),
 ]);
 
 export const TOOLS = Object.freeze([
-  Object.freeze({ id: 'spin', name: '转笔', mark: '↻', scoreRate: 34, suspicionRate: 3.2, hide: 0.12 }),
-  Object.freeze({ id: 'doodle', name: '涂鸦', mark: '✎', scoreRate: 42, suspicionRate: 4.8, hide: 0.18 }),
-  Object.freeze({ id: 'comic', name: '漫画', mark: '▤', scoreRate: 55, suspicionRate: 8.4, hide: 0.48 }),
+  Object.freeze({ id: 'spin', name: '转笔', mark: '↻', scoreRate: 28, suspicionRate: 2.6, hide: 0.12, noise: 0.05 }),
+  Object.freeze({ id: 'doodle', name: '涂鸦', mark: '✎', scoreRate: 34, suspicionRate: 4, hide: 0.18, noise: 0.1 }),
+  Object.freeze({ id: 'note', name: '传纸条', mark: '▱', scoreRate: 38, suspicionRate: 5.5, hide: 0.25, noise: 0.18 }),
+  Object.freeze({ id: 'snack', name: '偷吃零食', mark: '◒', scoreRate: 52, suspicionRate: 7.2, hide: 0.35, noise: 0.7 }),
+  Object.freeze({ id: 'comic', name: '桌洞漫画', mark: '▤', scoreRate: 62, suspicionRate: 8.5, hide: 0.48, noise: 0.22 }),
+  Object.freeze({ id: 'plane', name: '折纸飞机', mark: '➤', scoreRate: 75, suspicionRate: 12, hide: 0.42, noise: 0.6 }),
+  Object.freeze({ id: 'console', name: '玩掌机', mark: '▣', scoreRate: 68, suspicionRate: 10, hide: 0.3, noise: 0.48 }),
 ]);
 
 export const MEMORIES = Object.freeze([
   Object.freeze({ id: 'pen-master', name: '笔仙附体', mark: '↻' }),
   Object.freeze({ id: 'new-hero', name: '课本新角色', mark: '✎' }),
   Object.freeze({ id: 'desk-diver', name: '桌洞探险家', mark: '▤' }),
+  Object.freeze({ id: 'paper-route', name: '纸条穿越全班', mark: '▱' }),
+  Object.freeze({ id: 'snack-time', name: '零食只剩包装', mark: '◒' }),
+  Object.freeze({ id: 'paper-legend', name: '纸飞机传说', mark: '➤' }),
+  Object.freeze({ id: 'last-level', name: '差一点通关', mark: '▣' }),
   Object.freeze({ id: 'close-call', name: '眼皮底下', mark: '!' }),
+  Object.freeze({ id: 'roll-call', name: '点名时的沉默', mark: '？' }),
+  Object.freeze({ id: 'chalk-dodge', name: '粉笔擦肩而过', mark: '✦' }),
 ]);
 
 export const WATCHER_TYPES = Object.freeze([
-  Object.freeze({ key: 'teacher', name: '老师', fromLesson: 0, away: [3.2, 6.1], warn: 1.05, look: [1.1, 1.8], fakeChance: 0.12 }),
-  Object.freeze({ key: 'corridor', name: '巡课老师', fromLesson: 1, away: [6.2, 9.6], warn: 1.15, look: [1.15, 1.7], fakeChance: 0 }),
-  Object.freeze({ key: 'monitor', name: '班长', fromLesson: 2, away: [5.1, 8.2], warn: 0.88, look: [1, 1.45], fakeChance: 0.05 }),
+  Object.freeze({ key: 'teacher', name: '老师', fromLesson: 0, away: [4.4, 7.2], warn: 1.05, look: [1.1, 1.8], fakeChance: 0.12 }),
+  Object.freeze({ key: 'corridor', name: '巡课老师', fromLesson: 1, away: [7.2, 11], warn: 1.15, look: [1.15, 1.7], fakeChance: 0 }),
+  Object.freeze({ key: 'monitor', name: '班长', fromLesson: 2, away: [5.5, 9], warn: 0.88, look: [1, 1.45], fakeChance: 0.05 }),
 ]);
 
 export const MAX_STRIKES = 3;
 export const NEAR_MISS_WINDOW = 0.42;
 
-const CLASS_EVENTS = Object.freeze([
-  Object.freeze({ id: 'question', label: '突然提问' }),
-  Object.freeze({ id: 'laugh', label: '全班笑场' }),
-  Object.freeze({ id: 'chalk', label: '粉笔头！' }),
-  Object.freeze({ id: 'fake-bell', label: '谁按了铃？' }),
-]);
+const CLASS_EVENTS = Object.freeze({
+  chalk: Object.freeze({ id: 'chalk', label: '粉笔头！' }),
+  question: Object.freeze({ id: 'question', label: '突然提问' }),
+  'fake-bell': Object.freeze({ id: 'fake-bell', label: '谁按了铃？' }),
+  laugh: Object.freeze({ id: 'laugh', label: '全班笑场' }),
+  'roll-call': Object.freeze({ id: 'roll-call', label: '随机点名' }),
+  quiet: Object.freeze({ id: 'quiet', label: '教室突然安静' }),
+  monitor: Object.freeze({ id: 'monitor', label: '班长起身了' }),
+});
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const between = (random, min, max) => min + (max - min) * random();
 const toolById = (id) => TOOLS.find((tool) => tool.id === id) || TOOLS[0];
 const watcherType = (key) => WATCHER_TYPES.find((watcher) => watcher.key === key);
 
-function normalizeLoadout(loadout) {
-  const valid = [...new Set((loadout || []).filter((id) => TOOLS.some((tool) => tool.id === id)))];
-  for (const tool of TOOLS) {
-    if (valid.length >= 2) break;
-    if (!valid.includes(tool.id)) valid.push(tool.id);
-  }
-  return valid.slice(0, 2);
+function normalizeMemories(memories) {
+  return [...new Set((memories || []).filter((id) => MEMORIES.some((memory) => memory.id === id)))];
 }
 
 function unlockMemory(state, id, events) {
   if (state.memories.includes(id)) return;
   state.memories.push(id);
-  events.push({ type: 'memory', memory: MEMORIES.find((memory) => memory.id === id) });
+  const memory = MEMORIES.find((item) => item.id === id);
+  events.push({ type: 'memory', memory });
 }
 
 function resetWatcher(watcher, lessonIndex, suspicion, random, first = false) {
@@ -61,7 +82,7 @@ function resetWatcher(watcher, lessonIndex, suspicion, random, first = false) {
     watcher.fake = false;
     return;
   }
-  const pressure = clamp(1 - suspicion / 180, 0.5, 1);
+  const pressure = clamp(1 - suspicion / 220, 0.48, 1);
   watcher.mode = 'away';
   watcher.timer = between(random, type.away[0], type.away[1]) * pressure + (first ? 1.2 : 0);
   watcher.fake = false;
@@ -81,22 +102,27 @@ function enterLesson(state, lessonIndex, random) {
   state.combo = 1;
   state.classEvent = null;
   state.classEventTimer = 0;
-  state.nextEventTimer = between(random, 7, 10);
+  state.speechText = '';
+  state.speechTimer = 0;
+  state.nextEventTimer = between(random, 8, 12);
+  state.nextSpeechTimer = between(random, 6, 9);
+  state.lastSpeechBand = 0;
   for (const watcher of state.watchers) resetWatcher(watcher, lessonIndex, state.suspicion, random, true);
 }
 
 export function createGameState(options = {}, maybeRandom = Math.random) {
   const random = typeof options === 'function' ? options : maybeRandom;
   const config = typeof options === 'function' ? {} : options;
-  const selectedTools = normalizeLoadout(config.selectedTools);
   const state = {
     phase: 'playing', lessonIndex: 0, lessonTime: 0, score: 0, strikes: 0,
-    selectedTools, activeTool: selectedTools[0], inputActive: false, performing: false,
+    activeTool: TOOLS[0].id, inputActive: false, performing: false,
     actionIntensity: 0, actionFresh: 0, stowTimer: 0, combo: 1,
     suspicion: 0, focusLock: 0, sinceFocused: 99, comicOpen: 0,
+    noteProgress: 0, noteTarget: 0, snackBites: 0, planeFold: 0, planeStage: 0, consoleSteps: 0,
     doodleProgress: 0, spinTurns: 0, spinTurnBuffer: 0,
     lastCaughtBy: null, classEvent: null, classEventTimer: 0, nextEventTimer: 8,
-    memories: [],
+    speechText: '', speechTimer: 0, speechFake: false, nextSpeechTimer: 7, lastSpeechBand: 0,
+    memories: normalizeMemories(config.memories),
     stats: { nearMisses: 0, inputs: 0, maxSuspicion: 0, comicSeconds: 0, doodleDistance: 0, spinTurns: 0 },
     watchers: WATCHER_TYPES.map((watcher) => ({ key: watcher.key, mode: 'off', timer: 0, fake: false })),
   };
@@ -104,24 +130,24 @@ export function createGameState(options = {}, maybeRandom = Math.random) {
   return state;
 }
 
-export function setLoadout(state, loadout) {
-  const selectedTools = normalizeLoadout(loadout);
-  state.selectedTools = selectedTools;
-  if (!selectedTools.includes(state.activeTool)) state.activeTool = selectedTools[0];
-  return selectedTools;
-}
-
-export function startNextLesson(state, loadout = state.selectedTools, random = Math.random) {
+export function startNextLesson(state, random = Math.random) {
   if (state.phase !== 'between' || state.lessonIndex >= LESSONS.length - 1) return [];
-  setLoadout(state, loadout);
   enterLesson(state, state.lessonIndex + 1, random);
   return [{ type: 'lesson-start', lessonIndex: state.lessonIndex }];
 }
 
 export function setActiveTool(state, toolId) {
-  if (state.phase !== 'playing' || !state.selectedTools.includes(toolId) || isExposed(state)) return false;
+  if (state.phase !== 'playing' || !TOOLS.some((tool) => tool.id === toolId) || state.activeTool === toolId) return false;
+  const oldTool = toolById(state.activeTool);
+  if (isExposed(state)) state.stowTimer = Math.max(state.stowTimer, oldTool.hide * 0.62);
   state.activeTool = toolId;
+  state.inputActive = false;
+  state.performing = false;
   state.actionIntensity = 0;
+  state.actionFresh = 0;
+  state.comicOpen = 0;
+  state.planeStage = 0;
+  state.planeFold = 0;
   return true;
 }
 
@@ -131,10 +157,28 @@ export function setInputActive(state, active) {
   state.inputActive = Boolean(active);
   if (active) {
     state.stats.inputs += 1;
-    if (state.activeTool !== 'comic') state.performing = true;
+    state.performing = state.activeTool !== 'comic';
   } else if (state.activeTool !== 'comic' && state.performing) {
     state.performing = false;
-    state.stowTimer = toolById(state.activeTool).hide;
+    state.stowTimer = Math.max(state.stowTimer, toolById(state.activeTool).hide);
+    events.push({ type: 'packing', duration: state.stowTimer });
+  }
+  return events;
+}
+
+export function focusNow(state) {
+  const events = [];
+  if (state.phase !== 'playing' || state.focusLock > 0) return events;
+  const wasExposed = isExposed(state);
+  state.inputActive = false;
+  state.performing = false;
+  state.actionIntensity = 0;
+  state.actionFresh = 0;
+  state.comicOpen = 0;
+  state.planeStage = 0;
+  state.planeFold = 0;
+  if (wasExposed) {
+    state.stowTimer = Math.max(state.stowTimer, toolById(state.activeTool).hide * 0.72);
     events.push({ type: 'packing', duration: state.stowTimer });
   }
   return events;
@@ -169,6 +213,31 @@ export function applyGesture(state, kind, amount) {
       events.push({ type: 'doodle-complete' });
       unlockMemory(state, 'new-hero', events);
     }
+  } else if (kind === 'note') {
+    const distance = Math.max(0, value);
+    state.performing = state.inputActive || distance > 0;
+    state.actionFresh = 0.22;
+    state.actionIntensity = clamp(state.actionIntensity + distance * 1.25, 0, 1.15);
+    state.noteProgress = clamp(state.noteProgress + distance * 0.045, 0, 1);
+    if (state.noteProgress >= 1) {
+      state.noteProgress = 0;
+      state.noteTarget = (state.noteTarget + 1) % 4;
+      state.score += 90;
+      events.push({ type: 'note-sent', target: state.noteTarget });
+      unlockMemory(state, 'paper-route', events);
+    }
+  } else if (kind === 'snack') {
+    state.performing = true;
+    state.actionFresh = 0.2;
+    state.actionIntensity = 1;
+    state.snackBites += 1;
+    events.push({ type: 'snack-crunch', bite: state.snackBites });
+    if (state.snackBites >= 4) {
+      state.snackBites = 0;
+      state.score += 120;
+      events.push({ type: 'snack-finished' });
+      unlockMemory(state, 'snack-time', events);
+    }
   } else if (kind === 'comic') {
     const before = state.comicOpen;
     state.comicOpen = clamp(state.comicOpen + value, 0, 1);
@@ -184,25 +253,57 @@ export function applyGesture(state, kind, amount) {
       state.sinceFocused = 0;
       events.push({ type: 'focused' });
     }
+  } else if (kind === 'plane') {
+    if (state.planeStage === 0) {
+      state.planeFold = clamp(state.planeFold + Math.abs(value) * 1.8, 0, 1);
+      state.performing = state.planeFold > 0.04;
+      state.actionFresh = 0.2;
+      state.actionIntensity = state.planeFold;
+      if (state.planeFold >= 1) {
+        state.planeStage = 1;
+        events.push({ type: 'plane-folded' });
+      }
+    } else if (state.planeStage === 1 && value < -0.08) {
+      state.planeStage = 2;
+      state.performing = true;
+      state.actionFresh = 0.35;
+      state.actionIntensity = 1;
+      state.score += 150;
+      state.suspicion += 25;
+      events.push({ type: 'plane-thrown' });
+      unlockMemory(state, 'paper-legend', events);
+    }
+  } else if (kind === 'console') {
+    state.performing = true;
+    state.actionFresh = 0.18;
+    state.actionIntensity = 1;
+    state.consoleSteps += 1;
+    if (state.consoleSteps >= 6) {
+      state.consoleSteps = 0;
+      state.score += 110;
+      events.push({ type: 'console-clear' });
+      unlockMemory(state, 'last-level', events);
+    }
   }
   return events;
 }
 
 export function isExposed(state) {
   if (!state || state.phase !== 'playing') return false;
-  if (state.activeTool === 'comic') return state.comicOpen > 0.06;
-  return state.inputActive || state.performing || state.stowTimer > 0;
+  return state.stowTimer > 0 || state.inputActive || state.performing || state.comicOpen > 0.06 || state.planeStage > 0;
 }
 
 function catchPlayer(state, watcher, events) {
   state.strikes += 1;
-  state.lastCaughtBy = watcher.key;
+  state.lastCaughtBy = watcher?.key || 'teacher';
   state.inputActive = false;
   state.performing = false;
   state.actionIntensity = 0;
   state.actionFresh = 0;
   state.stowTimer = 0;
   state.comicOpen = 0;
+  state.planeStage = 0;
+  state.planeFold = 0;
   state.combo = 1;
   state.focusLock = 1.45;
   state.sinceFocused = 0;
@@ -214,7 +315,7 @@ function catchPlayer(state, watcher, events) {
       other.fake = false;
     }
   }
-  events.push({ type: 'caught', watcher: watcher.key, strikes: state.strikes });
+  events.push({ type: 'caught', watcher: state.lastCaughtBy, strikes: state.strikes });
   if (state.strikes >= MAX_STRIKES) {
     state.phase = 'lost';
     events.push({ type: 'lost' });
@@ -248,30 +349,55 @@ function updateWatcher(state, watcher, dt, random, events) {
           if (state.suspicion >= 72) unlockMemory(state, 'close-call', events);
         }
       }
-    } else {
-      resetWatcher(watcher, state.lessonIndex, state.suspicion, random);
-    }
+    } else resetWatcher(watcher, state.lessonIndex, state.suspicion, random);
   }
   if (watcher.mode === 'look' && isExposed(state) && state.focusLock <= 0) catchPlayer(state, watcher, events);
 }
 
 function triggerClassEvent(state, random, events) {
-  const event = CLASS_EVENTS[Math.floor(random() * CLASS_EVENTS.length)] || CLASS_EVENTS[0];
+  const lesson = LESSONS[state.lessonIndex];
+  const event = CLASS_EVENTS[lesson.events[Math.floor(random() * lesson.events.length)]] || CLASS_EVENTS.chalk;
   state.classEvent = event.id;
   state.classEventTimer = 1.8;
   events.push({ type: 'class-event', event });
-  if (event.id === 'question') {
-    if (isExposed(state)) state.suspicion += 20;
-    else state.score += 45;
+  if (event.id === 'chalk') {
+    if (isExposed(state)) state.suspicion += 13;
+    else state.score += 25;
+    if (random() > 0.45) events.push({ type: 'chalk-near' });
+  } else if (event.id === 'question' || event.id === 'roll-call') {
+    if (isExposed(state)) state.suspicion += event.id === 'question' ? 22 : 17;
+    else state.score += event.id === 'question' ? 45 : 32;
+    if (event.id === 'roll-call') unlockMemory(state, 'roll-call', events);
+  } else if (event.id === 'quiet') {
+    if (isExposed(state)) state.suspicion += 15;
+    for (const watcher of state.watchers) if (watcher.mode === 'away') watcher.timer = Math.max(0.8, watcher.timer - 1.2);
+  } else if (event.id === 'monitor') {
+    const monitor = state.watchers.find((watcher) => watcher.key === 'monitor');
+    if (monitor && monitor.mode !== 'off') { monitor.mode = 'warn'; monitor.timer = 0.78; }
+    if (isExposed(state)) state.suspicion += 12;
   } else if (event.id === 'laugh') {
     state.suspicion = Math.max(0, state.suspicion - 18);
     for (const watcher of state.watchers) if (watcher.mode === 'away') watcher.timer += 1.3;
-  } else if (event.id === 'chalk' && isExposed(state)) {
-    state.suspicion += 13;
-  } else if (event.id === 'fake-bell') {
-    state.score += isExposed(state) ? 20 : 0;
+  } else if (event.id === 'fake-bell' && isExposed(state)) state.score += 20;
+  state.nextEventTimer = between(random, 10, 16);
+}
+
+function triggerTeacherLine(state, random, events) {
+  const lesson = LESSONS[state.lessonIndex];
+  const band = state.suspicion >= 82 ? 3 : state.suspicion >= 60 ? 2 : state.suspicion >= 34 ? 1 : 0;
+  if (band === 0) return;
+  const line = lesson.teacherLines[Math.floor(random() * lesson.teacherLines.length)];
+  const fake = random() < 0.3 + state.lessonIndex * 0.04;
+  state.speechText = line;
+  state.speechTimer = 2.4;
+  state.speechFake = fake;
+  state.lastSpeechBand = band;
+  state.nextSpeechTimer = between(random, 5, 8);
+  events.push({ type: 'teacher-line', line, fake, band });
+  if (!fake) {
+    const teacher = state.watchers.find((watcher) => watcher.key === 'teacher');
+    if (teacher?.mode === 'away') { teacher.mode = 'warn'; teacher.timer = Math.max(0.42, 0.8 * lesson.alertScale); }
   }
-  state.nextEventTimer = between(random, 8, 13);
 }
 
 export function updateGame(state, dt, random = Math.random) {
@@ -281,29 +407,28 @@ export function updateGame(state, dt, random = Math.random) {
 
   state.focusLock = Math.max(0, state.focusLock - step);
   state.actionFresh = Math.max(0, state.actionFresh - step);
+  if (state.speechTimer > 0) state.speechTimer = Math.max(0, state.speechTimer - step);
   if (!state.inputActive && state.activeTool !== 'comic') state.performing = false;
   if (state.stowTimer > 0) {
     state.stowTimer = Math.max(0, state.stowTimer - step);
-    if (state.stowTimer === 0) {
-      state.sinceFocused = 0;
-      events.push({ type: 'focused' });
-    }
+    if (state.stowTimer === 0) { state.sinceFocused = 0; events.push({ type: 'focused' }); }
   }
 
   let effort = 0;
   if (state.activeTool === 'comic') {
     effort = state.comicOpen;
     if (effort > 0.06) state.stats.comicSeconds += step;
-  } else if (state.inputActive && state.actionFresh > 0) {
+  } else if (state.actionFresh > 0 && (state.inputActive || state.performing || state.planeStage === 2)) {
     effort = clamp(state.actionIntensity, 0, 1);
   }
   state.actionIntensity = Math.max(state.activeTool === 'comic' ? state.comicOpen : 0, state.actionIntensity - step * 2.25);
 
   if (effort > 0.04 && state.focusLock <= 0) {
     const tool = toolById(state.activeTool);
+    const lesson = LESSONS[state.lessonIndex];
     state.combo = clamp(state.combo + step * 0.32, 1, 3.5);
-    state.score += tool.scoreRate * effort * state.combo * LESSONS[state.lessonIndex].scoreScale * step;
-    state.suspicion += tool.suspicionRate * (0.45 + effort) * step;
+    state.score += tool.scoreRate * effort * state.combo * lesson.scoreScale * step;
+    state.suspicion += tool.suspicionRate * (0.45 + effort) * lesson.noiseScale * step;
   } else if (!isExposed(state)) {
     state.combo = Math.max(1, state.combo - step * 2.8);
     state.suspicion = Math.max(0, state.suspicion - step * 7.2);
@@ -319,6 +444,8 @@ export function updateGame(state, dt, random = Math.random) {
 
   state.nextEventTimer -= step;
   if (state.nextEventTimer <= 0) triggerClassEvent(state, random, events);
+  state.nextSpeechTimer -= step;
+  if (state.nextSpeechTimer <= 0 && state.suspicion >= 34) triggerTeacherLine(state, random, events);
   if (state.classEventTimer > 0) {
     state.classEventTimer = Math.max(0, state.classEventTimer - step);
     if (state.classEventTimer === 0) state.classEvent = null;
@@ -336,6 +463,7 @@ export function updateGame(state, dt, random = Math.random) {
     state.inputActive = false;
     state.performing = false;
     state.comicOpen = 0;
+    state.planeStage = 0;
     state.combo = 1;
     for (const watcher of state.watchers) watcher.mode = 'off';
     events.push({ type: 'lesson-end', lessonIndex: state.lessonIndex });
@@ -356,8 +484,8 @@ export function remainingSeconds(state) {
 }
 
 export function scoreRank(score) {
-  if (score >= 3600) return '课桌下的宇宙学家';
-  if (score >= 2400) return '走神课代表';
-  if (score >= 1200) return '窗外观察员';
+  if (score >= 7600) return '课桌下的宇宙学家';
+  if (score >= 5100) return '走神课代表';
+  if (score >= 2600) return '窗外观察员';
   return '偶尔发呆的同学';
 }

@@ -215,7 +215,7 @@ function drawStudent(ctx, x, y, scale, shirt, turned = 0, bob = 0) {
   ctx.restore();
 }
 
-function drawTeacher(ctx, turn, time, event) {
+function drawTeacher(ctx, turn, time, event, speech) {
   const pace = Math.sin(time * 0.55) * 9;
   ctx.save();
   ctx.translate(628 + pace, 260 + Math.sin(time * 2.2) * 2);
@@ -266,6 +266,17 @@ function drawTeacher(ctx, turn, time, event) {
     ctx.font = '800 17px Microsoft YaHei, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('你来回答。', 0, -81);
+    ctx.textAlign = 'left';
+  }
+  if (speech?.timer > 0) {
+    ctx.fillStyle = '#fff8db';
+    roundedRect(ctx, -126, -150, 252, 38, 10);
+    ctx.fill();
+    ctx.fillStyle = '#3b4a49';
+    ctx.font = '800 14px Microsoft YaHei, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(speech.text, 0, -126);
+    ctx.textAlign = 'left';
   }
   ctx.restore();
 }
@@ -283,7 +294,7 @@ function drawRoom(ctx, scene) {
   drawStudent(ctx, 520, 377, 0.7, '#755ea1', 0, laugh);
   drawStudent(ctx, 756, 374, 0.75, '#d77950', 0, -laugh);
   drawStudent(ctx, 205, 386, 0.9, '#b84f4d', monitorTurn);
-  drawTeacher(ctx, teacherTurn, time, state?.classEvent);
+  drawTeacher(ctx, teacherTurn, time, state?.classEvent, { text: state?.speechText, timer: state?.speechTimer });
 
   if (state?.classEvent === 'chalk') {
     const p = 1 - state.classEventTimer / 1.8;
@@ -394,6 +405,71 @@ function drawHands(ctx, scene) {
     ctx.rotate(-0.75);
     ctx.fillStyle = '#315d9a';
     roundedRect(ctx, -6, -55, 12, 110, 6);
+    ctx.fill();
+    ctx.restore();
+  } else if (tool === 'note') {
+    const x = 380 + (state?.noteProgress || 0) * 180;
+    ctx.save();
+    ctx.translate(x, 526);
+    ctx.rotate(-0.06);
+    ctx.fillStyle = '#fff3b6';
+    ctx.fillRect(-72, -32, 144, 64);
+    ctx.strokeStyle = '#b58b38';
+    ctx.strokeRect(-72, -32, 144, 64);
+    ctx.fillStyle = '#774a35';
+    ctx.font = '700 17px KaiTi, serif';
+    ctx.fillText('放学小卖部？', -54, 5);
+    ctx.restore();
+  } else if (tool === 'snack') {
+    ctx.save();
+    ctx.translate(480, 520 + Math.sin(time * 5) * 2);
+    ctx.fillStyle = '#d8463e';
+    roundedRect(ctx, -58, -64, 116, 112, 9);
+    ctx.fill();
+    ctx.fillStyle = '#ffd45c';
+    ctx.font = '900 30px Microsoft YaHei, sans-serif';
+    ctx.fillText('辣', -16, -5);
+    ctx.fillStyle = '#fff4d5';
+    ctx.font = '700 12px Microsoft YaHei, sans-serif';
+    ctx.fillText(`${Math.min(4, state?.snackBites || 0)} 口`, -18, 28);
+    ctx.restore();
+  } else if (tool === 'plane') {
+    ctx.save();
+    const thrown = state?.planeStage === 2;
+    ctx.translate(thrown ? 480 + Math.sin(time * 3) * 100 : 480, thrown ? 400 : 520);
+    ctx.rotate(thrown ? -0.25 : -0.08);
+    ctx.fillStyle = '#eef6f0';
+    ctx.strokeStyle = '#7d9a96';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-100, 28);
+    ctx.lineTo(108, -42);
+    ctx.lineTo(28, 48);
+    ctx.lineTo(-10, 17);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-10, 17);
+    ctx.lineTo(108, -42);
+    ctx.stroke();
+    ctx.restore();
+  } else if (tool === 'console') {
+    ctx.save();
+    ctx.translate(480, 520);
+    ctx.fillStyle = '#253b50';
+    roundedRect(ctx, -112, -62, 224, 124, 16);
+    ctx.fill();
+    ctx.fillStyle = '#90c777';
+    ctx.fillRect(-65, -43, 130, 78);
+    ctx.fillStyle = '#1f4e3c';
+    for (let y = -32; y < 28; y += 15) for (let x = -52; x < 54; x += 15) if ((x + y) % 30 === 0) ctx.fillRect(x, y, 10, 10);
+    ctx.fillStyle = '#d9e4e8';
+    ctx.fillRect(-94, -6, 34, 10);
+    ctx.fillRect(-82, -18, 10, 34);
+    ctx.beginPath();
+    ctx.arc(86, -11, 8, 0, Math.PI * 2);
+    ctx.arc(70, 13, 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -510,5 +586,5 @@ export function drawShareCard(ctx, result) {
   ctx.textAlign = 'left';
   ctx.fillStyle = '#586d69';
   ctx.font = '600 28px Microsoft YaHei, sans-serif';
-  ctx.fillText('老师转身以后，四十五分钟可以很长。', 126, 958);
+  ctx.fillText('老师转身以后，一节课可以很长。', 126, 958);
 }

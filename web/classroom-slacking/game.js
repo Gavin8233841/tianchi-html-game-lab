@@ -3,18 +3,18 @@ import {
   MAX_STRIKES,
   MEMORIES,
   TOOLS,
+  applyGesture,
   createGameState,
+  focusNow,
   isExposed,
   remainingSeconds,
   scoreRank,
   setActiveTool,
   setInputActive,
-  applyGesture,
   startNextLesson,
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
-import { createLeaderboard, loadNickname, saveNickname } from './leaderboard.js';
 
 const shell = document.getElementById('game-shell');
 const canvas = document.getElementById('classroom');
@@ -39,12 +39,13 @@ const cueEls = Object.fromEntries(
   [...document.querySelectorAll('.danger-cue')].map((element) => [element.dataset.watcher, element]),
 );
 
-const BEST_KEY = 'classroom_slacking_best_v2';
+const BEST_KEY = 'classroom_slacking_best_v3';
+const MEMORY_KEY = 'classroom_slacking_memories_v3';
 const WATCHER_NAMES = { teacher: '老师', corridor: '巡课老师', monitor: '班长' };
 const TOOL_NAMES = Object.fromEntries(TOOLS.map((tool) => [tool.id, tool.name]));
+const TOOL_KEYS = Object.fromEntries(TOOLS.map((tool, index) => [`Digit${index + 1}`, tool.id]));
 
 let state = null;
-let selectedTools = ['spin', 'doodle'];
 let pointerId = null;
 let lastPoint = null;
 let lastGestureAngle = null;
@@ -59,10 +60,17 @@ let monitorTurn = 0;
 let muted = false;
 let best = loadBest();
 let runStartedAt = 0;
-let leaderboard = createLeaderboard(window.CLASSROOM_LEADERBOARD_ENDPOINT || '/api/classroom-scores');
 
 function loadBest() {
   try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch { return 0; }
+}
+
+function loadMemories() {
+  try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || '[]'); } catch { return []; }
+}
+
+function saveMemories(memories) {
+  try { localStorage.setItem(MEMORY_KEY, JSON.stringify(memories)); } catch { /* Optional local collection. */ }
 }
 
 function saveBest(value) {
@@ -80,29 +88,10 @@ function formatTime(seconds) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-function updateLoadoutButtons() {
-  document.querySelectorAll('[data-loadout]').forEach((button) => {
-    button.classList.toggle('is-selected', selectedTools.includes(button.dataset.loadout));
-  });
-  const count = document.getElementById('loadout-count');
-  if (count) count.textContent = `${selectedTools.length} / 2`;
-}
-
-function toggleLoadout(toolId) {
-  if (!TOOLS.some((tool) => tool.id === toolId)) return;
-  if (selectedTools.includes(toolId)) {
-    if (selectedTools.length > 1) selectedTools = selectedTools.filter((id) => id !== toolId);
-  } else if (selectedTools.length < 2) {
-    selectedTools = [...selectedTools, toolId];
-  } else {
-    selectedTools = [selectedTools[1], toolId];
-  }
-  updateLoadoutButtons();
-}
-
 function updateHud() {
   if (!state) return;
   const lesson = LESSONS[state.lessonIndex];
+  const exposed = isExposed(state);
   scoreEl.textContent = Math.floor(state.score).toLocaleString('zh-CN');
   lessonCountEl.textContent = `第 ${state.lessonIndex + 1} 节 / ${LESSONS.length}`;
   lessonNameEl.textContent = lesson.title;
@@ -112,9 +101,8 @@ function updateHud() {
   progressEl.style.width = `${Math.min(100, state.lessonTime / lesson.duration * 100)}%`;
   [...strikesEl.children].forEach((dot, index) => dot.classList.toggle('is-hit', index < state.strikes));
   strikesEl.setAttribute('aria-label', `${state.strikes} 次被抓，最多 ${MAX_STRIKES} 次`);
-
-  const exposed = isExposed(state);
   shell.classList.toggle('is-active', exposed);
+
   activityEl.textContent = exposed
     ? `正在：${TOOL_NAMES[state.activeTool]} · 怀疑 ${Math.round(state.suspicion)}`
     : state.focusLock > 0 ? '老师还在看，先老实一会儿' : '正在：认真听课';
@@ -122,11 +110,15 @@ function updateHud() {
   if (state.focusLock > 0) promptEl.textContent = '别动 · 老师还在看';
   else if (state.activeTool === 'spin') promptEl.textContent = exposed ? '绕着笔画圈 · 预警就松手' : '按住并画圈 · 转笔';
   else if (state.activeTool === 'doodle') promptEl.textContent = exposed ? '快收笔 · 预警就松手' : '按住并画线 · 涂鸦';
-  else promptEl.textContent = state.comicOpen > 0.06 ? '向上拖 · 藏回桌洞' : '向下拖 · 打开漫画';
+  else if (state.activeTool === 'note') promptEl.textContent = '横向拖动 · 传给同桌';
+  else if (state.activeTool === 'snack') promptEl.textContent = '点几下 · 偷吃一口';
+  else if (state.activeTool === 'comic') promptEl.textContent = state.comicOpen > 0.06 ? '向上拖 · 藏回桌洞' : '向下拖 · 打开漫画';
+  else if (state.activeTool === 'plane') promptEl.textContent = state.planeStage === 1 ? '向上甩出去 · 快收手' : '拖着折 · 折好再甩';
+  else promptEl.textContent = '点按或按方向键 · 掌机闯关';
 
   for (const button of toolDock.querySelectorAll('.tool-button')) {
     button.classList.toggle('is-active', button.dataset.tool === state.activeTool);
-    button.disabled = exposed || state.focusLock > 0;
+    button.disabled = state.focusLock > 0;
   }
   for (const watcher of state.watchers) {
     const cue = cueEls[watcher.key];
@@ -147,59 +139,31 @@ function showIntermission() {
     <div class='screen-copy'>
       <p class='eyebrow'>下课铃 · ${state.lessonIndex + 1} / ${LESSONS.length}</p>
       <h1>下一节 · ${next.title}</h1>
-      <p class='tagline'>${next.topic}</p>
-      <div class='loadout-picker' aria-label='换两件装备'>
-        <p class='picker-label'>换两件装备？<span id='loadout-count'>2 / 2</span></p>
-        <div class='loadout-options'>
-          ${TOOLS.map((tool) => `<button class='loadout-button' type='button' data-loadout='${tool.id}'><b>${tool.mark}</b><span>${tool.name}</span><small>${tool.id === 'spin' ? '画圈' : tool.id === 'doodle' ? '画线' : '拖开'}</small></button>`).join('')}
-        </div>
-      </div>
+      <p class='tagline'>${next.topic}<br>回忆已收集 ${state.memories.length} / ${MEMORIES.length}</p>
       <button id='continue-button' class='primary-button' type='button'>继续上课</button>
     </div>`;
-  updateLoadoutButtons();
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-}
-
-function leaderboardMarkup(rows, online, scope = 'local') {
-  const list = rows.length
-    ? rows.map((row, index) => `<li><span>${index + 1}</span><span>${escapeHtml(row.nickname)}</span><strong>${row.score.toLocaleString('zh-CN')}</strong></li>`).join('')
-    : '<li><span>—</span><span>还没有成绩</span><strong>—</strong></li>';
-  return `
-    <div class='leaderboard-head'><span>全球榜</span><small class='leaderboard-status'>${online ? scope === 'global' ? '全球在线' : '本地服务' : '本机回退'}</small></div>
-    <ol class='leaderboard-list'>${list}</ol>
-    <div class='nickname-row'><input id='nickname-input' maxlength='10' value='${escapeHtml(loadNickname())}' aria-label='昵称' placeholder='你的昵称'><button id='submit-score' type='button'>上榜</button></div>`;
 }
 
 function showEndScreen(won) {
   const score = Math.floor(state.score);
   saveBest(score);
+  saveMemories(state.memories);
   bannerTimer = 0;
   bannerEl.textContent = '';
   toolDock.classList.add('is-hidden');
   screen.classList.remove('is-hidden');
-  const memoryDots = MEMORIES.filter((memory) => state.memories.includes(memory.id)).map((memory) => `<i class='memory-dot' title='${memory.name}'>${memory.mark}</i>`).join('');
+  const memoryDots = MEMORIES.map((memory) => state.memories.includes(memory.id)
+    ? `<i class='memory-dot' title='${memory.name}'>${memory.mark}</i>` : '').join('');
   screen.innerHTML = `
     <div class='screen-copy'>
       <p class='eyebrow'>${won ? '放学铃响了' : '纪律记录已满'}</p>
       <h1>${won ? '平安熬到放学' : '被请去办公室'}</h1>
       <p class='score-line'>${score.toLocaleString('zh-CN')}</p>
-      <p class='tagline'>${scoreRank(score)} · 被抓 ${state.strikes} 次</p>
+      <p class='tagline'>${scoreRank(score)} · 被抓 ${state.strikes} 次<br>回忆已收集 ${state.memories.length} / ${MEMORIES.length}</p>
       <div class='memory-strip'>${memoryDots || '<i class="memory-dot">?</i>'}</div>
-      <div id='leaderboard-box' class='leaderboard-box'><div class='leaderboard-head'><span>全球榜</span><small class='leaderboard-status'>读取中…</small></div></div>
       <div class='end-actions'><button id='download-card' class='secondary-button' type='button'>保存成绩单</button><button id='restart-button' class='primary-button' type='button'>再来一天</button></div>
       <p class='best-score'>本机最高 ${best.toLocaleString('zh-CN')}</p>
     </div>`;
-  const durationMs = Math.max(8000, performance.now() - runStartedAt);
-  const run = { durationMs: Math.floor(durationMs), inputs: state.stats.inputs, lessons: state.lessonIndex + (won ? 1 : 0) };
-  leaderboard.list().then(({ rows, online, scope }) => {
-    const box = document.getElementById('leaderboard-box');
-    if (!box || !screen.contains(box)) return;
-    box.innerHTML = leaderboardMarkup(rows, online, scope);
-    box.dataset.run = JSON.stringify(run);
-  });
 }
 
 function hideScreen() {
@@ -210,12 +174,20 @@ function processEvents(events) {
   for (const event of events) {
     if (event.type === 'warning') audio.warning(event.watcher);
     else if (event.type === 'fake') { showBanner('假动作！', 0.7); audio.fake(); }
+    else if (event.type === 'teacher-line') { showBanner(`老师：“${event.line}”`, 2); audio.teacherLine(event.line, event.fake); }
     else if (event.type === 'spin-turn') audio.tap(350);
     else if (event.type === 'doodle-complete') showBanner('新角色诞生！', 0.8);
-    else if (event.type === 'comic-open') audio.page();
-    else if (event.type === 'near-miss') { showBanner(`极限收手 +${event.bonus}`, 1); audio.near(); }
+    else if (event.type === 'note-sent') { showBanner('纸条到了！', 0.8); audio.paper(); }
+    else if (event.type === 'snack-crunch') audio.crunch();
+    else if (event.type === 'snack-finished') showBanner('包装袋藏好了！', 0.8);
+    else if (event.type === 'comic-open') { showBanner('漫画翻到关键页', 0.8); audio.page(); }
+    else if (event.type === 'plane-folded') showBanner('折好了！', 0.65);
+    else if (event.type === 'plane-thrown') { showBanner('纸飞机起飞！', 0.9); audio.paper(); }
+    else if (event.type === 'console-clear') showBanner('这一关过了！', 0.8);
+    else if (event.type === 'chalk-near') { showBanner('擦边！', 0.65); audio.chalk(); }
     else if (event.type === 'class-event') { showBanner(event.event.label, 1); audio.event(); }
-    else if (event.type === 'memory') showBanner(`回忆解锁：${event.memory.name}`, 1.1);
+    else if (event.type === 'memory') { saveMemories(state.memories); showBanner(`回忆解锁：${event.memory.name}`, 1.1); }
+    else if (event.type === 'near-miss') { showBanner(`极限收手 +${event.bonus}`, 1); audio.near(); }
     else if (event.type === 'caught') { showBanner(`被${WATCHER_NAMES[event.watcher]}抓到了`, 1.4); shake = 1; audio.caught(); }
     else if (event.type === 'lesson-end') audio.bell();
     else if (event.type === 'prep') showIntermission();
@@ -227,8 +199,7 @@ function processEvents(events) {
 
 function startGame() {
   audio.unlock();
-  state = createGameState({ selectedTools });
-  state.activeTool = selectedTools[0];
+  state = createGameState({ memories: loadMemories() });
   runStartedAt = performance.now();
   pointerId = null;
   doodlePath = [];
@@ -245,7 +216,7 @@ function startGame() {
 
 function continueLesson() {
   if (!state || state.phase !== 'between') return;
-  processEvents(startNextLesson(state, selectedTools));
+  processEvents(startNextLesson(state));
 }
 
 function downloadShareCard() {
@@ -253,52 +224,40 @@ function downloadShareCard() {
   const card = document.createElement('canvas');
   card.width = 1080;
   card.height = 1080;
-  drawShareCard(card.getContext('2d'), { nickname: loadNickname(), score: Math.floor(state.score), rank: scoreRank(state.score), memories: state.memories });
+  drawShareCard(card.getContext('2d'), { nickname: '今日同学', score: Math.floor(state.score), rank: scoreRank(state.score), memories: state.memories });
   const link = document.createElement('a');
   link.download = '课桌下的宇宙-成绩单.png';
   link.href = card.toDataURL('image/png');
   link.click();
 }
 
-async function submitScore() {
-  const input = document.getElementById('nickname-input');
-  const button = document.getElementById('submit-score');
-  const box = document.getElementById('leaderboard-box');
-  if (!input || !button || !box) return;
-  const nickname = saveNickname(input.value);
-  button.disabled = true;
-  button.textContent = '提交中';
-  let run;
-  try { run = JSON.parse(box.dataset.run || '{}'); } catch { run = {}; }
-  const result = await leaderboard.submit(nickname, Math.floor(state.score), run);
-  box.innerHTML = leaderboardMarkup(result.rows, result.online, result.scope);
-  box.dataset.run = JSON.stringify(run);
+function cycleTool(direction) {
+  if (!state) return;
+  const index = TOOLS.findIndex((tool) => tool.id === state.activeTool);
+  const next = TOOLS[(index + direction + TOOLS.length) % TOOLS.length];
+  selectTool(next.id);
+}
+
+function selectTool(toolId) {
+  if (!state || !setActiveTool(state, toolId)) return false;
+  doodlePath = [];
+  showBanner(TOOL_NAMES[state.activeTool], 0.45);
+  audio.tap(260);
+  return true;
 }
 
 screen.addEventListener('click', (event) => {
-  const loadoutButton = event.target.closest('[data-loadout]');
-  if (loadoutButton) { toggleLoadout(loadoutButton.dataset.loadout); return; }
   if (event.target.closest('#continue-button')) { continueLesson(); return; }
   if (event.target.closest('#restart-button')) { startGame(); return; }
-  if (event.target.closest('#download-card')) { downloadShareCard(); return; }
-  if (event.target.closest('#submit-score')) submitScore();
-});
-
-document.querySelectorAll('.loadout-button').forEach((button) => {
-  button.dataset.loadout = button.dataset.tool;
+  if (event.target.closest('#download-card')) downloadShareCard();
 });
 document.getElementById('start-button').addEventListener('click', startGame);
-updateLoadoutButtons();
 bestScoreEl.textContent = best ? `本机最高脑洞值 ${best.toLocaleString('zh-CN')}` : '';
 
 toolDock.addEventListener('click', (event) => {
   const button = event.target.closest('[data-tool]');
   if (!button || !state) return;
-  if (setActiveTool(state, button.dataset.tool)) {
-    doodlePath = [];
-    showBanner(TOOL_NAMES[state.activeTool], 0.45);
-    audio.tap(260);
-  }
+  selectTool(button.dataset.tool);
 });
 
 function pointFromEvent(event) {
@@ -322,6 +281,8 @@ function handlePointerDown(event) {
   if (state.activeTool === 'spin') lastGestureAngle = Math.atan2(lastPoint.y - 520, lastPoint.x - 480);
   else if (state.activeTool === 'doodle') doodlePath = [lastPoint];
   processEvents(setInputActive(state, true));
+  if (state.activeTool === 'snack') processEvents(applyGesture(state, 'snack', 1));
+  if (state.activeTool === 'console') processEvents(applyGesture(state, 'console', 1));
 }
 
 function handlePointerMove(event) {
@@ -340,8 +301,14 @@ function handlePointerMove(event) {
       if (doodlePath.length > 100) doodlePath.shift();
       processEvents(applyGesture(state, 'doodle', distance / 100));
     }
+  } else if (state.activeTool === 'note' && lastPoint) {
+    processEvents(applyGesture(state, 'note', Math.abs(point.x - lastPoint.x) / 100));
   } else if (state.activeTool === 'comic' && lastPoint) {
     processEvents(applyGesture(state, 'comic', (point.y - lastPoint.y) / 180));
+  } else if (state.activeTool === 'plane' && lastPoint) {
+    processEvents(applyGesture(state, 'plane', (point.y - lastPoint.y) / 180));
+  } else if (state.activeTool === 'console' && lastPoint) {
+    if (Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) > 20) processEvents(applyGesture(state, 'console', 1));
   }
   lastPoint = point;
 }
@@ -363,20 +330,28 @@ window.addEventListener('blur', () => { if (state && pointerId !== null) release
 shell.addEventListener('contextmenu', (event) => event.preventDefault());
 
 window.addEventListener('keydown', (event) => {
-  if ((event.code === 'Space' || event.code === 'Enter') && state?.phase === 'playing') {
+  if (!state || state.phase !== 'playing') return;
+  if (TOOL_KEYS[event.code]) {
     event.preventDefault();
-    if (!event.repeat) {
-      processEvents(setInputActive(state, true));
-      if (state.activeTool === 'spin') processEvents(applyGesture(state, 'spin', 0.18));
-      if (state.activeTool === 'doodle') processEvents(applyGesture(state, 'doodle', 0.28));
-      if (state.activeTool === 'comic') processEvents(applyGesture(state, 'comic', 0.12));
-    }
+    selectTool(TOOL_KEYS[event.code]);
+    return;
+  }
+  if (event.code === 'KeyQ' || event.code === 'KeyE') {
+    event.preventDefault();
+    if (!event.repeat) cycleTool(event.code === 'KeyQ' ? -1 : 1);
+    return;
+  }
+  if (event.code === 'Space' || event.code === 'Escape') {
+    event.preventDefault();
+    if (!event.repeat) processEvents(focusNow(state));
+    return;
+  }
+  if (state.activeTool === 'console' && /^Arrow/.test(event.code)) {
+    event.preventDefault();
+    if (!event.repeat) processEvents(applyGesture(state, 'console', 1));
   }
 });
-window.addEventListener('keyup', (event) => {
-  if (event.code === 'Space' || event.code === 'Enter') processEvents(setInputActive(state, false));
-});
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) processEvents(setInputActive(state, false)); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) processEvents(focusNow(state)); });
 
 soundButton.addEventListener('click', () => {
   muted = !muted;
@@ -413,14 +388,28 @@ function createAudio() {
     volume.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     oscillator.connect(volume); volume.connect(gain); oscillator.start(start); oscillator.stop(start + duration + 0.03);
   }
+  function speak(text) {
+    if (isMuted || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.92;
+    utterance.pitch = 0.8;
+    utterance.volume = 0.72;
+    window.speechSynthesis.speak(utterance);
+  }
   return {
     unlock,
-    setMuted(value) { isMuted = value; },
+    setMuted(value) { isMuted = value; if (isMuted && 'speechSynthesis' in window) window.speechSynthesis.cancel(); },
     tap(frequency) { tone(frequency, 0.045, 'triangle', 0, frequency * 1.15); },
     warning(kind) { const base = kind === 'teacher' ? 620 : kind === 'corridor' ? 460 : 760; tone(base, 0.1, 'square'); tone(base * 1.18, 0.1, 'square', 0.12); },
     fake() { tone(420, 0.08, 'triangle', 0, 260); },
     page() { tone(260, 0.08, 'triangle', 0, 190); },
+    paper() { tone(300, 0.12, 'triangle', 0, 520); },
+    crunch() { tone(150, 0.08, 'square', 0, 90); },
+    chalk() { tone(230, 0.12, 'sawtooth', 0, 170); },
     event() { tone(510, 0.08, 'sine'); },
+    teacherLine(text) { tone(190, 0.18, 'triangle', 0, 150); speak(text); },
     near() { tone(480, 0.08, 'triangle'); tone(720, 0.12, 'triangle', 0.07); },
     caught() { tone(180, 0.28, 'sawtooth', 0, 65); tone(95, 0.32, 'square', 0.05, 45); },
     bell() { tone(880, 0.42, 'sine'); tone(660, 0.55, 'sine', 0.19); },
@@ -462,7 +451,6 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-updateLoadoutButtons();
 render(0);
 requestAnimationFrame(frame);
 
