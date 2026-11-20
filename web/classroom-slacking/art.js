@@ -1,5 +1,5 @@
 import { LESSONS, MEMORIES } from './core.js';
-import { HANDHELD, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SPIN } from './desk-actions.js';
+import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, SPIN } from './desk-actions.js';
 
 export const LOGICAL_W = 960;
 export const LOGICAL_H = 640;
@@ -477,6 +477,131 @@ function drawHandheld(ctx, game) {
   ctx.restore();
 }
 
+function drawDeskArrow(ctx, x, y, length, angle, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(length, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(length - 11, -8);
+  ctx.lineTo(length, 0);
+  ctx.lineTo(length - 11, 8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNote(ctx, note, drag) {
+  const handoff = note.handoff > 0;
+  const writing = !note.draft && !note.incoming && !handoff;
+  const offset = handoff ? 88 + (1 - note.handoff / 0.38) * 63
+    : note.draft && !note.incoming ? Math.min(88, Math.max(0, drag?.dx || 0)) : 0;
+  if ((note.draft && !note.incoming) || handoff) {
+    ctx.fillStyle = palette.skin;
+    ctx.beginPath();
+    ctx.ellipse(NOTE.x + 114, NOTE.y + 28, 38, 13, -0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(NOTE.x + offset, NOTE.y);
+  ctx.rotate(handoff ? 0.12 : -0.04);
+  const halfWidth = handoff ? 39 : NOTE.halfWidth;
+  const halfHeight = handoff ? 20 : NOTE.halfHeight;
+  ctx.fillStyle = note.incoming ? '#dcecbc' : '#fff2b8';
+  ctx.strokeStyle = '#ad864e';
+  ctx.lineWidth = 2;
+  roundedRect(ctx, -halfWidth, -halfHeight, halfWidth * 2, halfHeight * 2, 4);
+  ctx.fill();
+  ctx.stroke();
+  if (handoff) {
+    ctx.beginPath();
+    ctx.moveTo(-halfWidth + 4, -halfHeight + 4);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(halfWidth - 4, -halfHeight + 4);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = '#5d4537';
+    ctx.textAlign = 'center';
+    if (note.incoming) {
+      ctx.font = '700 11px Microsoft YaHei, sans-serif';
+      ctx.fillText('同桌回信', 0, -11);
+    }
+    ctx.font = '700 17px KaiTi, Microsoft YaHei, sans-serif';
+    ctx.fillText(note.incoming || note.draft, 0, note.incoming ? 14 : 5, halfWidth * 2 - 15);
+    if (writing) {
+      ctx.strokeStyle = '#b6a072';
+      ctx.setLineDash([5, 6]);
+      ctx.beginPath();
+      ctx.moveTo(-57, 4);
+      ctx.lineTo(57, 4);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (note.draft && !note.incoming) drawDeskArrow(ctx, -21, 20, 44, 0, '#84703b');
+  }
+  ctx.restore();
+  if (writing && drag) {
+    ctx.strokeStyle = '#3e516e';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(drag.point.x + 2, drag.point.y - 2);
+    ctx.lineTo(drag.point.x + 20, drag.point.y - 26);
+    ctx.stroke();
+  }
+}
+
+function drawSnack(ctx, snack, drag) {
+  const { x, y, sealY, bites } = SNACK;
+  const lip = sealY - y;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#aa392d';
+  roundedRect(ctx, -60, lip, 120, 111, 7);
+  ctx.fill();
+  ctx.fillStyle = '#d65136';
+  roundedRect(ctx, -56, lip + 8, 112, 96, 7);
+  ctx.fill();
+  ctx.fillStyle = '#ffd77e';
+  ctx.textAlign = 'center';
+  ctx.font = '900 28px Microsoft YaHei, sans-serif';
+  ctx.fillText('辣条', 0, 14);
+  ctx.font = '700 12px Microsoft YaHei, sans-serif';
+  ctx.fillText(`${bites - snack.bites} 根`, 0, 42);
+  if (!snack.open && snack.crunch === 0) {
+    ctx.fillStyle = '#ee985c';
+    ctx.fillRect(-60 + Math.min(47, Math.max(0, drag?.dx || 0)), lip - 6, 120, 13);
+    drawDeskArrow(ctx, -36, lip, 69, 0, '#73392a');
+  } else if (snack.open) {
+    ctx.fillStyle = '#532619';
+    ctx.beginPath();
+    ctx.ellipse(0, lip + 2, 55, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (snack.crunch === 0) {
+      const lift = Math.min(83, Math.max(0, -(drag?.dy || 0)));
+      drawDeskArrow(ctx, 24, lip - 10, 58, -Math.PI / 2, '#944920');
+      ctx.fillStyle = '#e5803a';
+      roundedRect(ctx, -7, lip - 23 - lift, 14, 33, 4);
+      ctx.fill();
+      ctx.fillStyle = '#b94523';
+      ctx.fillRect(-2, lip - 18 - lift, 3, 19);
+    }
+  }
+  if (snack.crunch > 0) {
+    ctx.fillStyle = '#f5ab4d';
+    for (const [dx, dy] of [[-15, -14], [12, -21], [21, -5]]) {
+      ctx.fillRect(dx, lip - 67 + dy, 5, 4);
+    }
+  }
+  ctx.restore();
+}
+
 function drawHands(ctx, scene) {
   const { state, time, spinAngle } = scene;
   const tool = state?.activeTool;
@@ -532,31 +657,9 @@ function drawHands(ctx, scene) {
     ctx.fill();
     ctx.restore();
   } else if (tool === 'note') {
-    const x = 380 + (state?.noteProgress || 0) * 180;
-    ctx.save();
-    ctx.translate(x, 526);
-    ctx.rotate(-0.06);
-    ctx.fillStyle = '#fff3b6';
-    ctx.fillRect(-72, -32, 144, 64);
-    ctx.strokeStyle = '#b58b38';
-    ctx.strokeRect(-72, -32, 144, 64);
-    ctx.fillStyle = '#774a35';
-    ctx.font = '700 17px KaiTi, serif';
-    ctx.fillText('放学小卖部？', -54, 5);
-    ctx.restore();
+    drawNote(ctx, state.note, scene.deskDrag);
   } else if (tool === 'snack') {
-    ctx.save();
-    ctx.translate(480, 520 + Math.sin(time * 5) * 2);
-    ctx.fillStyle = '#d8463e';
-    roundedRect(ctx, -58, -64, 116, 112, 9);
-    ctx.fill();
-    ctx.fillStyle = '#ffd45c';
-    ctx.font = '900 30px Microsoft YaHei, sans-serif';
-    ctx.fillText('辣', -16, -5);
-    ctx.fillStyle = '#fff4d5';
-    ctx.font = '700 12px Microsoft YaHei, sans-serif';
-    ctx.fillText(`${Math.min(4, state?.snackBites || 0)} 口`, -18, 28);
-    ctx.restore();
+    drawSnack(ctx, state.snack, scene.deskDrag);
   } else if (tool === 'plane' && !state.planeFlight) {
     drawFoldingPaper(ctx, state.planeFolds);
   } else if (tool === 'console') {
