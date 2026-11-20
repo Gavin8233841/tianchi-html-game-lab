@@ -55,7 +55,7 @@ test('V3 课堂：空格/Esc 对应的收好动作会清除当前动作但保留
   assert.ok(events.some((event) => event.type === 'packing'));
 });
 
-test('课堂：涂鸦、纸条、零食和漫画有独立的完成反馈', () => {
+test('课堂：涂鸦和漫画有独立的完成反馈', () => {
   const state = createGameState(fixedRandom);
 
   setActiveTool(state, 'doodle');
@@ -63,22 +63,123 @@ test('课堂：涂鸦、纸条、零食和漫画有独立的完成反馈', () =>
   const doodleEvents = applyGesture(state, 'doodle', 20);
   assert.ok(doodleEvents.some((event) => event.type === 'doodle-complete'));
 
-  setActiveTool(state, 'note');
-  const noteEvents = applyGesture(state, 'note', 30);
-  assert.ok(noteEvents.some((event) => event.type === 'note-sent'));
-  assert.equal(state.score, 90);
-
-  setActiveTool(state, 'snack');
-  const snackEvents = [1, 2, 3, 4].flatMap((bite) => applyGesture(state, 'snack', bite));
-  assert.ok(snackEvents.some((event) => event.type === 'snack-finished'));
-  assert.equal(state.snackBites, 0);
-
   setActiveTool(state, 'comic');
   assert.ok(applyGesture(state, 'comic', 0.9).some((event) => event.type === 'comic-open'));
   assert.ok(state.memories.includes('new-hero'));
-  assert.ok(state.memories.includes('paper-route'));
-  assert.ok(state.memories.includes('snack-time'));
   assert.ok(state.memories.includes('desk-diver'));
+});
+
+function quietClassroom(state) {
+  state.nextEventTimer = state.nextSpeechTimer = 100;
+  for (const watcher of state.watchers) {
+    if (watcher.mode !== 'off') watcher.timer = 100;
+  }
+}
+
+function tick(state, seconds) {
+  const events = [];
+  for (let time = 0; time < seconds; time += 0.05) events.push(...updateGame(state, 0.05, fixedRandom));
+  return events;
+}
+
+test('纸条：先写后传，发送内容轮换且随课程变化', () => {
+  const state = createGameState(fixedRandom);
+  quietClassroom(state);
+  setActiveTool(state, 'note');
+  assert.deepEqual(applyGesture(state, 'note', 'pass', fixedRandom), []);
+  const send = () => {
+    applyGesture(state, 'note', 'write', fixedRandom);
+    assert.ok(state.note.draft);
+    const events = applyGesture(state, 'note', 'pass', fixedRandom);
+    tick(state, 0.4);
+    return events.find((event) => event.type === 'note-sent').text;
+  };
+  const math = Array.from({ length: 8 }, send);
+  assert.equal(new Set(math).size, 8);
+  assert.equal(state.score, 720);
+  assert.equal(state.note.waiting, null);
+  assert.ok(state.memories.includes('paper-route'));
+  finishLesson(state);
+  startNextLesson(state, fixedRandom);
+  assert.ok(!math.includes(send()));
+});
+
+test('纸条：回信等待解锁，自动切换并暂停其他动作', () => {
+  const state = createGameState(fixedRandom);
+  quietClassroom(state);
+  setActiveTool(state, 'note');
+  const replyRandom = () => 0;
+  applyGesture(state, 'note', 'write', replyRandom);
+  applyGesture(state, 'note', 'pass', replyRandom);
+  state.focusLock = 3;
+  tick(state, 2.4);
+  assert.equal(state.note.incoming, '');
+  assert.ok(tick(state, 0.75).some((event) => event.type === 'note-reply'));
+  applyGesture(state, 'note', 'read');
+  assert.equal(state.note.incoming, '');
+  applyGesture(state, 'note', 'write', replyRandom);
+  applyGesture(state, 'note', 'pass', replyRandom);
+  setActiveTool(state, 'console');
+  applyGesture(state, 'console', -1);
+  assert.ok(tick(state, 2.3).some((event) => event.type === 'note-reply'));
+  assert.equal(state.activeTool, 'note');
+  assert.equal(state.handheld.active, false);
+  assert.ok(state.handheld.dodged > 0);
+  assert.equal(state.handheld.confiscated, false);
+  assert.ok(state.note.incoming);
+  focusNow(state);
+  assert.equal(state.note.incoming, '');
+});
+
+test('辣条：先撕再吃，快撕更吵，第四口吃完获得回忆', () => {
+  const state = createGameState(fixedRandom);
+  quietClassroom(state);
+  setActiveTool(state, 'snack');
+  assert.deepEqual(applyGesture(state, 'snack', 'bite'), []);
+  assert.equal(applyGesture(state, 'snack', 'tear-fast')[0].loud, true);
+  assert.equal(state.suspicion, 10);
+  for (let bite = 0; bite < 4; bite += 1) {
+    const events = applyGesture(state, 'snack', 'bite');
+    assert.ok(events.some((event) => event.type === 'snack-crunch'));
+    assert.deepEqual(applyGesture(state, 'snack', 'bite'), []);
+    if (bite === 3) assert.ok(events.some((event) => event.type === 'snack-finished'));
+    tick(state, 0.35);
+  }
+  assert.deepEqual(state.snack, { open: false, bites: 0, crunch: 0 });
+  assert.equal(state.score, 120);
+  assert.ok(state.memories.includes('snack-time'));
+  const suspicion = state.suspicion;
+  assert.equal(applyGesture(state, 'snack', 'tear')[0].loud, false);
+  assert.equal(state.suspicion - suspicion, 2);
+});
+
+test('掌机：还没收好就被抓会没收，下节课恢复方块和进度', () => {
+  const state = createGameState(fixedRandom);
+  quietClassroom(state);
+  setActiveTool(state, 'console');
+  applyGesture(state, 'console', -1);
+  tick(state, 1.4);
+  const { dodged, progress, lane, obstacle } = state.handheld;
+  assert.equal(dodged, 1);
+  focusNow(state);
+  Object.assign(state.watchers[0], { mode: 'look', timer: 1 });
+  const caught = updateGame(state, 0.05, fixedRandom);
+  assert.ok(caught.some((event) => event.type === 'handheld-confiscated'));
+  assert.equal(state.strikes, 1);
+  assert.equal(state.handheld.active, false);
+  assert.equal(state.handheld.confiscated, true);
+  assert.equal(setActiveTool(state, 'console'), false);
+  assert.deepEqual(applyGesture(state, 'console', 1), []);
+  assert.ok(setActiveTool(state, 'note'));
+  finishLesson(state);
+  assert.ok(startNextLesson(state, fixedRandom).some((event) => event.type === 'handheld-returned'));
+  assert.equal(state.handheld.confiscated, false);
+  assert.deepEqual({ dodged, progress, lane, obstacle },
+    Object.fromEntries(['dodged', 'progress', 'lane', 'obstacle'].map((key) => [key, state.handheld[key]])));
+  assert.ok(setActiveTool(state, 'console'));
+  applyGesture(state, 'console', 1);
+  assert.equal(state.handheld.active, true);
+  assert.equal(state.handheld.dodged, dodged);
 });
 
 test('纸飞机：依次折叠，可跨课短投，远投每局一次且风险更高', () => {

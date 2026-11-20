@@ -16,7 +16,7 @@ import {
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
-import { HANDHELD, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SPIN } from './desk-actions.js';
+import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, SPIN } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
 const canvas = document.getElementById('classroom');
@@ -42,6 +42,8 @@ const clearButton = document.getElementById('doodle-clear');
 const farButton = planeActions.querySelector('[data-throw="far"]');
 const screen = document.getElementById('screen');
 const toolDock = document.getElementById('tool-dock');
+const handheldButton = toolDock.querySelector('[data-tool="console"]');
+const handheldLabel = handheldButton.querySelector('span');
 const bestScoreEl = document.getElementById('best-score');
 const soundButton = document.getElementById('sound-toggle');
 const cueEls = Object.fromEntries(
@@ -58,6 +60,7 @@ let state = null;
 let pointerId = null;
 let lastPoint = null;
 let pointerStart = null;
+let deskDrag = null;
 let lastGestureAngle = null;
 let spinAngle = 0;
 let doodleStrokes = [];
@@ -129,8 +132,14 @@ function updateHud() {
   else if (exposed && state.watchers.some((watcher) => watcher.mode === 'warn')) promptEl.textContent = '快收好！';
   else if (state.activeTool === 'spin') promptEl.textContent = '沿圆环转笔';
   else if (state.activeTool === 'doodle') promptEl.textContent = '在纸上画';
-  else if (state.activeTool === 'note') promptEl.textContent = '横向拖动 · 传给同桌';
-  else if (state.activeTool === 'snack') promptEl.textContent = '点几下 · 偷吃一口';
+  else if (state.activeTool === 'note') {
+    if (state.note.incoming) promptEl.textContent = '同桌回信 · 点纸条收好';
+    else if (state.note.handoff > 0) promptEl.textContent = '同桌接到了';
+    else promptEl.textContent = state.note.draft ? '向右推给同桌 →' : '在纸条上划一笔';
+  } else if (state.activeTool === 'snack') {
+    if (state.snack.crunch > 0) promptEl.textContent = '嚼嚼嚼…';
+    else promptEl.textContent = state.snack.open ? '把辣条往上拖 ↑' : '沿袋口横向拉开 →';
+  }
   else if (state.activeTool === 'comic') promptEl.textContent = state.comicOpen > 0.06 ? '向上拖 · 藏回桌洞' : '向下拖 · 打开漫画';
   else if (state.activeTool === 'plane') {
     const arrow = PLANE_FOLDS[state.planeFolds] === -1 ? '←' : '→';
@@ -142,8 +151,12 @@ function updateHud() {
   for (const button of toolDock.querySelectorAll('.tool-button')) {
     button.classList.toggle('is-active', button.dataset.tool === state.activeTool);
     button.setAttribute('aria-pressed', String(button.dataset.tool === state.activeTool));
-    button.disabled = state.focusLock > 0;
+    button.disabled = locked || (button === handheldButton && state.handheld.confiscated);
   }
+  handheldButton.classList.toggle('is-confiscated', state.handheld.confiscated);
+  handheldButton.title = state.handheld.confiscated ? '掌机已没收，下节课归还' : '掌机 · 7';
+  const handheldText = state.handheld.confiscated ? '已没收' : '掌机';
+  if (handheldLabel.textContent !== handheldText) handheldLabel.textContent = handheldText;
   for (const watcher of state.watchers) {
     const cue = cueEls[watcher.key];
     cue.classList.toggle('is-active', watcher.mode === 'warn' || watcher.mode === 'look');
@@ -202,7 +215,13 @@ function processEvents(events) {
       showBanner(`${event.fast ? '快转！' : '转了一圈'} · 怀疑 +${event.suspicion}`, 0.6);
     }
     else if (event.type === 'doodle-complete') showBanner('新角色诞生！', 0.8);
+    else if (event.type === 'note-written') audio.tap(310);
     else if (event.type === 'note-sent') { showBanner('纸条到了！', 0.8); audio.paper(); }
+    else if (event.type === 'note-reply') { resetPointer(); showBanner('同桌回信了！', 0.9); audio.paper(); }
+    else if (event.type === 'snack-open') {
+      if (event.loud) { showBanner('撕太响了！ · 怀疑 +10', 0.8); audio.crunch(); }
+      else audio.paper();
+    }
     else if (event.type === 'snack-crunch') audio.crunch();
     else if (event.type === 'snack-finished') showBanner('包装袋藏好了！', 0.8);
     else if (event.type === 'comic-open') { showBanner('漫画翻到关键页', 0.8); audio.page(); }
@@ -214,6 +233,8 @@ function processEvents(events) {
     }
     else if (event.type === 'handheld-hit') { showBanner('撞到了！ · 怀疑 +7', 0.75); audio.fake(); }
     else if (event.type === 'handheld-dodge') audio.tap(410);
+    else if (event.type === 'handheld-confiscated') showBanner('掌机被没收 · 下节课归还', 2);
+    else if (event.type === 'handheld-returned') showBanner('掌机归还 · 接着玩', 1.5);
     else if (event.type === 'console-clear') showBanner('这一关过了！', 0.8);
     else if (event.type === 'chalk-near') { showBanner('擦边！', 0.65); audio.chalk(); }
     else if (event.type === 'class-event') { showBanner(event.event.label, 1); audio.event(); }
@@ -260,12 +281,17 @@ function downloadShareCard() {
 
 function cycleTool(direction) {
   if (!state) return;
-  const index = TOOLS.findIndex((tool) => tool.id === state.activeTool);
-  const next = TOOLS[(index + direction + TOOLS.length) % TOOLS.length];
+  const available = state.handheld.confiscated ? TOOLS.filter((tool) => tool.id !== 'console') : TOOLS;
+  const index = available.findIndex((tool) => tool.id === state.activeTool);
+  const next = available[(index + direction + available.length) % available.length];
   selectTool(next.id);
 }
 
 function selectTool(toolId) {
+  if (toolId === 'console' && state?.handheld.confiscated) {
+    showBanner('掌机下节课归还', 0.9);
+    return false;
+  }
   if (!state || !setActiveTool(state, toolId)) return false;
   resetPointer();
   showBanner(TOOL_NAMES[state.activeTool], 0.45);
@@ -340,6 +366,11 @@ function onPaper(point) {
   return point.x >= PAPER.left && point.x <= PAPER.right && point.y >= PAPER.top && point.y <= PAPER.bottom;
 }
 
+function nearNote(point) {
+  return Math.abs(point.x - NOTE.x) <= NOTE.halfWidth + 10 &&
+    Math.abs(point.y - NOTE.y) <= NOTE.halfHeight + 12;
+}
+
 function handlePointerDown(event) {
   if (!state || state.phase !== 'playing' || state.focusLock > 0 || pointerId !== null || event.button !== 0) return;
   if (state.activeTool === 'plane' && state.planeFlight) return;
@@ -357,13 +388,46 @@ function handlePointerDown(event) {
   if (state.activeTool === 'doodle' && !onPaper(point)) return;
   if (state.activeTool === 'spin' && spinPointAngle(point) === null) return;
   if (state.activeTool === 'plane' && (Math.abs(point.x - 480) > 118 || Math.abs(point.y - 520) > 83)) return;
+  if (state.activeTool === 'note') {
+    if (!nearNote(point) || state.note.handoff > 0) return;
+    if (state.note.incoming) {
+      event.preventDefault();
+      processEvents(applyGesture(state, 'note', 'read'));
+      return;
+    }
+  }
+  if (state.activeTool === 'snack' &&
+      (Math.abs(point.x - SNACK.x) > 65 || Math.abs(point.y - SNACK.sealY) > 30 || state.snack.crunch > 0)) return;
   event.preventDefault();
   pointerId = event.pointerId;
   canvas.setPointerCapture?.(pointerId);
   lastPoint = pointerStart = point;
+  if (state.activeTool === 'note' || state.activeTool === 'snack') {
+    deskDrag = { dx: 0, dy: 0, distance: 0, startedAt: event.timeStamp, point };
+  }
   if (state.activeTool === 'spin') lastGestureAngle = spinPointAngle(point);
   processEvents(setInputActive(state, true));
-  if (state.activeTool === 'snack') processEvents(applyGesture(state, 'snack', 1));
+}
+
+function updateDeskDrag(point) {
+  deskDrag.dx = point.x - pointerStart.x;
+  deskDrag.dy = point.y - pointerStart.y;
+  deskDrag.distance += Math.hypot(point.x - deskDrag.point.x, point.y - deskDrag.point.y);
+  deskDrag.point = point;
+}
+
+function finishDeskDrag(event, point) {
+  updateDeskDrag(point);
+  const { dx, dy, distance, startedAt } = deskDrag;
+  if (state.activeTool === 'note') {
+    if (!state.note.draft && distance >= NOTE.writeDistance) processEvents(applyGesture(state, 'note', 'write'));
+    else if (dx >= NOTE.passDistance && dx > Math.abs(dy)) processEvents(applyGesture(state, 'note', 'pass'));
+  } else if (!state.snack.open && dx >= SNACK.tearDistance && dx > Math.abs(dy)) {
+    const speed = dx / Math.max(1, event.timeStamp - startedAt);
+    processEvents(applyGesture(state, 'snack', speed >= 0.72 ? 'tear-fast' : 'tear'));
+  } else if (state.snack.open && -dy >= SNACK.biteDistance && -dy > Math.abs(dx)) {
+    processEvents(applyGesture(state, 'snack', 'bite'));
+  }
 }
 
 function handlePointerMove(event) {
@@ -394,8 +458,8 @@ function handlePointerMove(event) {
     }
     activeStroke.push(point);
     processEvents(applyGesture(state, 'doodle', distance / 100));
-  } else if (state.activeTool === 'note' && lastPoint) {
-    processEvents(applyGesture(state, 'note', Math.abs(point.x - lastPoint.x) / 100));
+  } else if (deskDrag) {
+    updateDeskDrag(point);
   } else if (state.activeTool === 'comic' && lastPoint) {
     processEvents(applyGesture(state, 'comic', (point.y - lastPoint.y) / 180));
   }
@@ -404,6 +468,7 @@ function handlePointerMove(event) {
 
 function releasePointer(event) {
   if (!state || event.pointerId !== pointerId) return;
+  if (event.type === 'pointerup' && deskDrag) finishDeskDrag(event, pointFromEvent(event));
   if (event.type === 'pointerup' && state.activeTool === 'plane') {
     const end = pointFromEvent(event);
     const dx = end.x - pointerStart.x;
@@ -419,6 +484,7 @@ function resetPointer(releaseCapture = true) {
   const released = pointerId;
   pointerId = null;
   lastPoint = pointerStart = null;
+  deskDrag = null;
   lastGestureAngle = null;
   activeStroke = null;
   if (releaseCapture && released !== null && canvas.hasPointerCapture?.(released)) canvas.releasePointerCapture(released);
@@ -551,7 +617,7 @@ function render(time) {
   teacherTurn += (teacherTarget - teacherTurn) * 0.12;
   corridorPresence += (corridorTarget - corridorPresence) * 0.1;
   monitorTurn += (monitorTarget - monitorTurn) * 0.14;
-  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, doodleStrokes });
+  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, doodleStrokes, deskDrag });
 }
 
 function frame(now) {
