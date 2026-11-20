@@ -12,9 +12,11 @@ import {
   setActiveTool,
   setInputActive,
   startNextLesson,
+  throwPlane,
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
+import { HANDHELD, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SPIN } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
 const canvas = document.getElementById('classroom');
@@ -29,8 +31,15 @@ const suspicionFillEl = document.getElementById('suspicion-fill');
 const strikesEl = document.getElementById('strikes');
 const progressEl = document.getElementById('lesson-progress-fill');
 const bannerEl = document.getElementById('banner');
-const activityEl = document.getElementById('activity');
 const promptEl = document.getElementById('hold-prompt');
+const controls = document.getElementById('desk-controls');
+const doodleActions = document.getElementById('doodle-actions');
+const consoleActions = document.getElementById('console-actions');
+const planeActions = document.getElementById('plane-actions');
+const stowButton = document.getElementById('stow-tool');
+const undoButton = document.getElementById('doodle-undo');
+const clearButton = document.getElementById('doodle-clear');
+const farButton = planeActions.querySelector('[data-throw="far"]');
 const screen = document.getElementById('screen');
 const toolDock = document.getElementById('tool-dock');
 const bestScoreEl = document.getElementById('best-score');
@@ -48,9 +57,11 @@ const TOOL_KEYS = Object.fromEntries(TOOLS.map((tool, index) => [`Digit${index +
 let state = null;
 let pointerId = null;
 let lastPoint = null;
+let pointerStart = null;
 let lastGestureAngle = null;
 let spinAngle = 0;
-let doodlePath = [];
+let doodleStrokes = [];
+let activeStroke = null;
 let lastFrame = performance.now();
 let bannerTimer = 0;
 let shake = 0;
@@ -59,7 +70,6 @@ let corridorPresence = 0;
 let monitorTurn = 0;
 let muted = false;
 let best = loadBest();
-let runStartedAt = 0;
 
 function loadBest() {
   try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch { return 0; }
@@ -103,21 +113,35 @@ function updateHud() {
   strikesEl.setAttribute('aria-label', `${state.strikes} 次被抓，最多 ${MAX_STRIKES} 次`);
   shell.classList.toggle('is-active', exposed);
 
-  activityEl.textContent = exposed
-    ? `正在：${TOOL_NAMES[state.activeTool]} · 怀疑 ${Math.round(state.suspicion)}`
-    : state.focusLock > 0 ? '老师还在看，先老实一会儿' : '正在：认真听课';
-
+  const playing = state.phase === 'playing';
+  const ready = state.planeFolds === PLANE_FOLDS.length;
+  const locked = state.focusLock > 0;
+  controls.classList.toggle('is-hidden', !playing);
+  shell.classList.toggle('is-playing', playing);
+  doodleActions.classList.toggle('is-hidden', state.activeTool !== 'doodle');
+  planeActions.classList.toggle('is-hidden', state.activeTool !== 'plane' || !ready);
+  consoleActions.classList.toggle('is-hidden', state.activeTool !== 'console');
+  undoButton.disabled = clearButton.disabled = doodleStrokes.length === 0;
+  for (const button of consoleActions.querySelectorAll('button')) button.disabled = locked;
+  farButton.disabled = state.farThrowUsed;
+  farButton.textContent = state.farThrowUsed ? '远投已用' : `冒险远投 +${PLANE_FLIGHT.far.score}`;
   if (state.focusLock > 0) promptEl.textContent = '别动 · 老师还在看';
-  else if (state.activeTool === 'spin') promptEl.textContent = exposed ? '绕着笔画圈 · 预警就松手' : '按住并画圈 · 转笔';
-  else if (state.activeTool === 'doodle') promptEl.textContent = exposed ? '快收笔 · 预警就松手' : '按住并画线 · 涂鸦';
+  else if (exposed && state.watchers.some((watcher) => watcher.mode === 'warn')) promptEl.textContent = '快收好！';
+  else if (state.activeTool === 'spin') promptEl.textContent = '沿圆环转笔';
+  else if (state.activeTool === 'doodle') promptEl.textContent = '在纸上画';
   else if (state.activeTool === 'note') promptEl.textContent = '横向拖动 · 传给同桌';
   else if (state.activeTool === 'snack') promptEl.textContent = '点几下 · 偷吃一口';
   else if (state.activeTool === 'comic') promptEl.textContent = state.comicOpen > 0.06 ? '向上拖 · 藏回桌洞' : '向下拖 · 打开漫画';
-  else if (state.activeTool === 'plane') promptEl.textContent = state.planeStage === 1 ? '向上甩出去 · 快收手' : '拖着折 · 折好再甩';
-  else promptEl.textContent = '点按或按方向键 · 掌机闯关';
+  else if (state.activeTool === 'plane') {
+    const arrow = PLANE_FOLDS[state.planeFolds] === -1 ? '←' : '→';
+    promptEl.textContent = ready ? '向上甩可短投' : state.planeFlight ? '飞机飞出去了' : `沿 ${arrow} 划一下 · ${state.planeFolds}/${PLANE_FOLDS.length}`;
+  } else promptEl.textContent = state.handheld.active
+    ? `躲开方块 · ${state.handheld.dodged}/${HANDHELD.goal}`
+    : state.handheld.dodged === HANDHELD.goal ? '通关！← → 再玩一盘' : '← → 开始 / 继续躲方块';
 
   for (const button of toolDock.querySelectorAll('.tool-button')) {
     button.classList.toggle('is-active', button.dataset.tool === state.activeTool);
+    button.setAttribute('aria-pressed', String(button.dataset.tool === state.activeTool));
     button.disabled = state.focusLock > 0;
   }
   for (const watcher of state.watchers) {
@@ -133,7 +157,6 @@ function updateHud() {
 
 function showIntermission() {
   const next = LESSONS[state.lessonIndex + 1];
-  toolDock.classList.add('is-hidden');
   screen.classList.remove('is-hidden');
   screen.innerHTML = `
     <div class='screen-copy'>
@@ -150,7 +173,6 @@ function showEndScreen(won) {
   saveMemories(state.memories);
   bannerTimer = 0;
   bannerEl.textContent = '';
-  toolDock.classList.add('is-hidden');
   screen.classList.remove('is-hidden');
   const memoryDots = MEMORIES.map((memory) => state.memories.includes(memory.id)
     ? `<i class='memory-dot' title='${memory.name}'>${memory.mark}</i>` : '').join('');
@@ -175,23 +197,32 @@ function processEvents(events) {
     if (event.type === 'warning') audio.warning(event.watcher);
     else if (event.type === 'fake') { showBanner('假动作！', 0.7); audio.fake(); }
     else if (event.type === 'teacher-line') { showBanner(`老师：“${event.line}”`, 2); audio.teacherLine(event.line, event.fake); }
-    else if (event.type === 'spin-turn') audio.tap(350);
+    else if (event.type === 'spin-turn') {
+      audio.tap(event.fast ? 490 : 350);
+      showBanner(`${event.fast ? '快转！' : '转了一圈'} · 怀疑 +${event.suspicion}`, 0.6);
+    }
     else if (event.type === 'doodle-complete') showBanner('新角色诞生！', 0.8);
     else if (event.type === 'note-sent') { showBanner('纸条到了！', 0.8); audio.paper(); }
     else if (event.type === 'snack-crunch') audio.crunch();
     else if (event.type === 'snack-finished') showBanner('包装袋藏好了！', 0.8);
     else if (event.type === 'comic-open') { showBanner('漫画翻到关键页', 0.8); audio.page(); }
     else if (event.type === 'plane-folded') showBanner('折好了！', 0.65);
-    else if (event.type === 'plane-thrown') { showBanner('纸飞机起飞！', 0.9); audio.paper(); }
+    else if (event.type === 'plane-fold') audio.paper();
+    else if (event.type === 'plane-thrown') {
+      showBanner(`${event.mode === 'far' ? '飞到讲台了！' : '飞到同桌那儿！'} +${event.score}`, 0.9);
+      audio.paper();
+    }
+    else if (event.type === 'handheld-hit') { showBanner('撞到了！ · 怀疑 +7', 0.75); audio.fake(); }
+    else if (event.type === 'handheld-dodge') audio.tap(410);
     else if (event.type === 'console-clear') showBanner('这一关过了！', 0.8);
     else if (event.type === 'chalk-near') { showBanner('擦边！', 0.65); audio.chalk(); }
     else if (event.type === 'class-event') { showBanner(event.event.label, 1); audio.event(); }
     else if (event.type === 'memory') { saveMemories(state.memories); showBanner(`回忆解锁：${event.memory.name}`, 1.1); }
     else if (event.type === 'near-miss') { showBanner(`极限收手 +${event.bonus}`, 1); audio.near(); }
-    else if (event.type === 'caught') { showBanner(`被${WATCHER_NAMES[event.watcher]}抓到了`, 1.4); shake = 1; audio.caught(); }
-    else if (event.type === 'lesson-end') audio.bell();
+    else if (event.type === 'caught') { resetPointer(); showBanner(`被${WATCHER_NAMES[event.watcher]}抓到了`, 1.4); shake = 1; audio.caught(); }
+    else if (event.type === 'lesson-end') { resetPointer(); audio.bell(); }
     else if (event.type === 'prep') showIntermission();
-    else if (event.type === 'lesson-start') { hideScreen(); toolDock.classList.remove('is-hidden'); showBanner(`第 ${state.lessonIndex + 1} 节 · ${LESSONS[state.lessonIndex].title}`, 1.5); }
+    else if (event.type === 'lesson-start') { hideScreen(); showBanner(`第 ${state.lessonIndex + 1} 节 · ${LESSONS[state.lessonIndex].title}`, 1.5); }
     else if (event.type === 'won') { showEndScreen(true); audio.finish(); }
     else if (event.type === 'lost') showEndScreen(false);
   }
@@ -200,14 +231,10 @@ function processEvents(events) {
 function startGame() {
   audio.unlock();
   state = createGameState({ memories: loadMemories() });
-  runStartedAt = performance.now();
-  pointerId = null;
-  doodlePath = [];
+  resetPointer();
+  doodleStrokes = [];
   spinAngle = 0;
   hud.classList.remove('is-hidden');
-  activityEl.classList.remove('is-hidden');
-  promptEl.classList.remove('is-hidden');
-  toolDock.classList.remove('is-hidden');
   hideScreen();
   showBanner('第一节 · 数学课', 1.5);
   audio.bell();
@@ -240,7 +267,7 @@ function cycleTool(direction) {
 
 function selectTool(toolId) {
   if (!state || !setActiveTool(state, toolId)) return false;
-  doodlePath = [];
+  resetPointer();
   showBanner(TOOL_NAMES[state.activeTool], 0.45);
   audio.tap(260);
   return true;
@@ -260,6 +287,37 @@ toolDock.addEventListener('click', (event) => {
   selectTool(button.dataset.tool);
 });
 
+function packUp() {
+  if (!state) return;
+  resetPointer();
+  processEvents(focusNow(state));
+}
+
+function launchPlane(mode) {
+  const events = throwPlane(state, mode);
+  if (events.length) resetPointer();
+  processEvents(events);
+}
+
+function eraseDrawing(all = false) {
+  if (state?.activeTool !== 'doodle' || state.phase !== 'playing') return;
+  if (pointerId !== null) releasePointer({ pointerId, type: 'pointercancel' });
+  if (all) doodleStrokes.length = 0;
+  else doodleStrokes.pop();
+}
+
+stowButton.addEventListener('click', packUp);
+undoButton.addEventListener('click', () => eraseDrawing());
+clearButton.addEventListener('click', () => eraseDrawing(true));
+planeActions.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-throw]');
+  if (button) launchPlane(button.dataset.throw);
+});
+consoleActions.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-direction]');
+  if (button) processEvents(applyGesture(state, 'console', Number(button.dataset.direction)));
+});
+
 function pointFromEvent(event) {
   return toLogicalPoint(event.clientX, event.clientY, canvas.getBoundingClientRect());
 }
@@ -271,66 +329,115 @@ function normalizeAngle(angle) {
   return value;
 }
 
+function spinPointAngle(point) {
+  const dx = point.x - SPIN.x;
+  const dy = point.y - SPIN.y;
+  const radius = Math.hypot(dx, dy);
+  return radius >= SPIN.inner && radius <= SPIN.outer ? Math.atan2(dy, dx) : null;
+}
+
+function onPaper(point) {
+  return point.x >= PAPER.left && point.x <= PAPER.right && point.y >= PAPER.top && point.y <= PAPER.bottom;
+}
+
 function handlePointerDown(event) {
-  if (!state || state.phase !== 'playing' || !screen.classList.contains('is-hidden')) return;
-  if (event.target.closest('button')) return;
+  if (!state || state.phase !== 'playing' || state.focusLock > 0 || pointerId !== null || event.button !== 0) return;
+  if (state.activeTool === 'plane' && state.planeFlight) return;
+  const point = pointFromEvent(event);
+  if (state.activeTool === 'console') {
+    const dx = point.x - HANDHELD.x;
+    const onButton = Math.abs(dx) >= HANDHELD.screenHalfWidth && Math.abs(dx) <= HANDHELD.halfWidth
+      && Math.abs(point.y - HANDHELD.y) <= HANDHELD.halfHeight;
+    if (onButton) {
+      event.preventDefault();
+      processEvents(applyGesture(state, 'console', Math.sign(dx)));
+    }
+    return;
+  }
+  if (state.activeTool === 'doodle' && !onPaper(point)) return;
+  if (state.activeTool === 'spin' && spinPointAngle(point) === null) return;
+  if (state.activeTool === 'plane' && (Math.abs(point.x - 480) > 118 || Math.abs(point.y - 520) > 83)) return;
   event.preventDefault();
   pointerId = event.pointerId;
   canvas.setPointerCapture?.(pointerId);
-  lastPoint = pointFromEvent(event);
-  if (state.activeTool === 'spin') lastGestureAngle = Math.atan2(lastPoint.y - 520, lastPoint.x - 480);
-  else if (state.activeTool === 'doodle') doodlePath = [lastPoint];
+  lastPoint = pointerStart = point;
+  if (state.activeTool === 'spin') lastGestureAngle = spinPointAngle(point);
   processEvents(setInputActive(state, true));
   if (state.activeTool === 'snack') processEvents(applyGesture(state, 'snack', 1));
-  if (state.activeTool === 'console') processEvents(applyGesture(state, 'console', 1));
 }
 
 function handlePointerMove(event) {
   if (!state || event.pointerId !== pointerId || state.phase !== 'playing') return;
   const point = pointFromEvent(event);
-  if (state.activeTool === 'spin' && lastPoint) {
-    const angle = Math.atan2(point.y - 520, point.x - 480);
-    const delta = normalizeAngle(angle - lastGestureAngle);
+  if (state.activeTool === 'spin') {
+    const angle = spinPointAngle(point);
+    const previous = lastGestureAngle;
     lastGestureAngle = angle;
-    spinAngle += delta;
-    processEvents(applyGesture(state, 'spin', Math.abs(delta) / (Math.PI * 2)));
-  } else if (state.activeTool === 'doodle' && lastPoint) {
-    const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
-    if (distance > 0.5) {
-      doodlePath.push(point);
-      if (doodlePath.length > 100) doodlePath.shift();
-      processEvents(applyGesture(state, 'doodle', distance / 100));
+    if (angle === null || previous === null) {
+      state.spinTurnBuffer = 0;
+      return;
     }
+    const delta = normalizeAngle(angle - previous);
+    spinAngle += delta;
+    processEvents(applyGesture(state, 'spin', delta / (Math.PI * 2)));
+  } else if (state.activeTool === 'doodle') {
+    if (!onPaper(point)) {
+      activeStroke = lastPoint = null;
+      return;
+    }
+    if (!lastPoint) { lastPoint = point; return; }
+    const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
+    if (distance < 2) return;
+    if (!activeStroke) {
+      activeStroke = [lastPoint];
+      doodleStrokes.push(activeStroke);
+    }
+    activeStroke.push(point);
+    processEvents(applyGesture(state, 'doodle', distance / 100));
   } else if (state.activeTool === 'note' && lastPoint) {
     processEvents(applyGesture(state, 'note', Math.abs(point.x - lastPoint.x) / 100));
   } else if (state.activeTool === 'comic' && lastPoint) {
     processEvents(applyGesture(state, 'comic', (point.y - lastPoint.y) / 180));
-  } else if (state.activeTool === 'plane' && lastPoint) {
-    processEvents(applyGesture(state, 'plane', (point.y - lastPoint.y) / 180));
-  } else if (state.activeTool === 'console' && lastPoint) {
-    if (Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) > 20) processEvents(applyGesture(state, 'console', 1));
   }
   lastPoint = point;
 }
 
 function releasePointer(event) {
   if (!state || event.pointerId !== pointerId) return;
+  if (event.type === 'pointerup' && state.activeTool === 'plane') {
+    const end = pointFromEvent(event);
+    const dx = end.x - pointerStart.x;
+    const dy = end.y - pointerStart.y;
+    if (state.planeFolds === PLANE_FOLDS.length && dy < -42 && -dy > Math.abs(dx)) launchPlane('short');
+    else if (Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy)) processEvents(applyGesture(state, 'plane', Math.sign(dx)));
+  }
   processEvents(setInputActive(state, false));
+  resetPointer(false);
+}
+
+function resetPointer(releaseCapture = true) {
+  const released = pointerId;
   pointerId = null;
-  lastPoint = null;
+  lastPoint = pointerStart = null;
   lastGestureAngle = null;
+  activeStroke = null;
+  if (releaseCapture && released !== null && canvas.hasPointerCapture?.(released)) canvas.releasePointerCapture(released);
 }
 
 canvas.addEventListener('pointerdown', handlePointerDown);
 canvas.addEventListener('pointermove', handlePointerMove);
 canvas.addEventListener('pointerup', releasePointer);
 canvas.addEventListener('pointercancel', releasePointer);
+canvas.addEventListener('lostpointercapture', (event) => {
+  // A prior drag can lose capture just after a new pointerdown with the same ID.
+  if (event.buttons === 0 && !canvas.hasPointerCapture(event.pointerId)) releasePointer(event);
+});
 window.addEventListener('pointerup', releasePointer);
-window.addEventListener('blur', () => { if (state && pointerId !== null) releasePointer({ pointerId }); });
+window.addEventListener('blur', packUp);
 shell.addEventListener('contextmenu', (event) => event.preventDefault());
 
 window.addEventListener('keydown', (event) => {
-  if (!state || state.phase !== 'playing') return;
+  if (!state || state.phase !== 'playing' || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
   if (TOOL_KEYS[event.code]) {
     event.preventDefault();
     selectTool(TOOL_KEYS[event.code]);
@@ -341,17 +448,23 @@ window.addEventListener('keydown', (event) => {
     if (!event.repeat) cycleTool(event.code === 'KeyQ' ? -1 : 1);
     return;
   }
-  if (event.code === 'Space' || event.code === 'Escape') {
+  if (event.code === 'KeyZ' && state.activeTool === 'doodle') {
     event.preventDefault();
-    if (!event.repeat) processEvents(focusNow(state));
+    if (!event.repeat) eraseDrawing(event.shiftKey);
     return;
   }
-  if (state.activeTool === 'console' && /^Arrow/.test(event.code)) {
+  if (event.code === 'Space' || event.code === 'Escape') {
     event.preventDefault();
-    if (!event.repeat) processEvents(applyGesture(state, 'console', 1));
+    if (!event.repeat) packUp();
+    return;
+  }
+  const arrow = event.key || event.code;
+  if (state.activeTool === 'console' && (arrow === 'ArrowLeft' || arrow === 'ArrowRight')) {
+    event.preventDefault();
+    processEvents(applyGesture(state, 'console', arrow === 'ArrowLeft' ? -1 : 1));
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state) processEvents(focusNow(state)); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') packUp(); });
 
 soundButton.addEventListener('click', () => {
   muted = !muted;
@@ -438,7 +551,7 @@ function render(time) {
   teacherTurn += (teacherTarget - teacherTurn) * 0.12;
   corridorPresence += (corridorTarget - corridorPresence) * 0.1;
   monitorTurn += (monitorTarget - monitorTurn) * 0.14;
-  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, doodlePath });
+  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, doodleStrokes });
 }
 
 function frame(now) {

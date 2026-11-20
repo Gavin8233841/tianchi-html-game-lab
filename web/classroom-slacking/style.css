@@ -32,3 +32,67 @@ button { font: inherit; }
 @media (max-width: 760px) { .hud { right: 56px; grid-template-columns: repeat(3, minmax(0, 1fr)); }.hud-item { min-height: 48px; padding: 6px 5px; }.hud-item strong { font-size: 16px; }.suspicion-box { display: none; }.strike-box { display: none; }.lesson-progress { grid-column: 1 / -1; }.danger-cues { top: 91px; flex-direction: column; align-items: center; }.danger-cue { min-height: 30px; font-size: 12px; }.screen h1 { font-size: 42px; }.tagline { font-size: 15px; }.banner { top: 31%; font-size: 23px; }.activity { bottom: 76px; }.hold-prompt { bottom: 74px; }.tool-dock { left: 12px; right: 12px; bottom: 12px; overflow-x: auto; justify-content: flex-start; padding: 0 1px 4px; scrollbar-width: thin; }.tool-button { flex: 0 0 53px; min-width: 53px; min-height: 51px; padding: 3px 5px; }.tool-button b { font-size: 21px; }.tool-button span { font-size: 10px; } }
 @media (max-width: 430px) { .loadout-options { gap: 6px; }.loadout-button { min-height: 76px; }.screen { padding: 15px; }.screen h1 { font-size: 37px; }.score-line { font-size: 25px; }.leaderboard-box { margin-top: 11px; }.end-actions { margin-top: 12px; } }
 @media (max-height: 570px) and (orientation: landscape) { .hud { top: 7px; left: 7px; right: 52px; }.hud-item { min-height: 43px; padding: 4px 7px; }.hud-item strong { font-size: 16px; }.danger-cues { top: 67px; }.screen h1 { font-size: 42px; }.tagline { margin-top: 7px; }.loadout-picker { margin-top: 9px; }.loadout-button { min-height: 63px; }.primary-button { margin-top: 11px; } }
+
+/* The scene and controls use separate space, keeping the desk reachable at short heights. */
+#game-shell { --desk-controls-height: 134px; background: #405951; }
+#game-shell.is-playing #classroom { height: calc(100% - var(--desk-controls-height)); }
+.desk-controls {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 7;
+  height: var(--desk-controls-height);
+  display: grid;
+  grid-template-rows: 22px 44px 48px;
+  justify-items: center;
+  gap: 4px;
+  background: #193b36;
+  border-top: 1px solid #547668;
+  padding: 5px 8px;
+}
+.desk-controls .hold-prompt {
+  position: static;
+  min-width: 0;
+  padding: 0 12px;
+  transform: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 22px;
+}
+#game-shell.is-active .desk-controls .hold-prompt { background: #7c2f25; }
+.action-row, .action-group { display: flex; align-items: stretch; justify-content: center; gap: 5px; }
+.action-row button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 2px 8px;
+  border: 1px solid #75958a;
+  border-radius: 6px;
+  background: #28514a;
+  color: #fff3d0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+.action-row [data-throw='far'] { background: #784738; }
+.action-row [data-direction] { font-size: 23px; }
+.desk-controls button:focus-visible { outline: 2px solid #ffd866; outline-offset: -3px; }
+.desk-controls button:active { filter: brightness(1.28); }
+.desk-controls button:disabled { opacity: 0.53; cursor: default; }
+.desk-controls .tool-dock {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: min(100%, 550px);
+  padding: 0;
+  gap: 3px;
+  overflow: visible;
+}
+.desk-controls .tool-button { min-width: 0; min-height: 45px; padding: 2px; }
+.desk-controls .tool-button span { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .hud { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .suspicion-box { display: block; }
+  .danger-cues { top: 76px; }
+}

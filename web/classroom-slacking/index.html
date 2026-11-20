@@ -24,9 +24,24 @@
         <div class='danger-cue' data-watcher='monitor'><b>!</b><span>班长在看你</span></div>
       </div>
       <div id='banner' class='banner' aria-live='assertive'></div>
-      <div id='activity' class='activity is-hidden'>认真听课</div>
-      <div id='hold-prompt' class='hold-prompt is-hidden'>动起来</div>
-      <nav id='tool-dock' class='tool-dock is-hidden' aria-label='桌面装备'>
+      <div id='desk-controls' class='desk-controls is-hidden'>
+        <div id='hold-prompt' class='hold-prompt'>动起来</div>
+        <div class='action-row'>
+          <button id='stow-tool' type='button' title='空格或 Esc'>收好</button>
+          <div id='doodle-actions' class='action-group is-hidden'>
+            <button id='doodle-undo' type='button' title='Z'>撤销</button>
+            <button id='doodle-clear' type='button'>清空</button>
+          </div>
+          <div id='plane-actions' class='action-group is-hidden'>
+            <button type='button' data-throw='short'>短投 +80</button>
+            <button type='button' data-throw='far'>远投 +260</button>
+          </div>
+          <div id='console-actions' class='action-group is-hidden' aria-label='掌机方向键'>
+            <button type='button' data-direction='-1' aria-label='掌机向左'>←</button>
+            <button type='button' data-direction='1' aria-label='掌机向右'>→</button>
+          </div>
+        </div>
+        <nav id='tool-dock' class='tool-dock' aria-label='桌面装备'>
         <button class='tool-button' type='button' data-tool='spin'><b>↻</b><span>转笔</span></button>
         <button class='tool-button' type='button' data-tool='doodle'><b>✎</b><span>涂鸦</span></button>
         <button class='tool-button' type='button' data-tool='note'><b>▱</b><span>纸条</span></button>
@@ -34,7 +49,8 @@
         <button class='tool-button' type='button' data-tool='comic'><b>▤</b><span>漫画</span></button>
         <button class='tool-button' type='button' data-tool='plane'><b>➤</b><span>纸飞机</span></button>
         <button class='tool-button' type='button' data-tool='console'><b>▣</b><span>掌机</span></button>
-      </nav>
+        </nav>
+      </div>
       <button id='sound-toggle' class='icon-button' type='button' aria-label='关闭声音' title='声音'>♪</button>
       <section id='screen' class='screen'>
         <div class='screen-copy intro-copy'>
