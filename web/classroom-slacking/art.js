@@ -1,4 +1,5 @@
 import { LESSONS, MEMORIES } from './core.js';
+import { HANDHELD, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SPIN } from './desk-actions.js';
 
 export const LOGICAL_W = 960;
 export const LOGICAL_H = 640;
@@ -21,7 +22,7 @@ function roundedRect(ctx, x, y, width, height, radius) {
 }
 
 export function viewportFor(width, height) {
-  const scale = Math.max(width / LOGICAL_W, height / LOGICAL_H);
+  const scale = height / LOGICAL_H;
   return {
     scale,
     offsetX: (width - LOGICAL_W * scale) / 2,
@@ -313,10 +314,9 @@ function drawRoom(ctx, scene) {
 }
 
 function drawNotebook(ctx, scene) {
-  const { state, doodlePath } = scene;
+  const { state, doodleStrokes } = scene;
   ctx.save();
   ctx.translate(480, 552);
-  ctx.rotate(-0.018);
   ctx.fillStyle = palette.desk;
   roundedRect(ctx, -425, -55, 850, 205, 12);
   ctx.fill();
@@ -340,7 +340,7 @@ function drawNotebook(ctx, scene) {
   ctx.moveTo(-188, -85);
   ctx.lineTo(-188, 76);
   ctx.stroke();
-  if (!state || state.activeTool !== 'doodle' || !state.inputActive) {
+  if ((!state || state.activeTool !== 'doodle') && !doodleStrokes?.length) {
     ctx.fillStyle = '#405a73';
     ctx.font = '20px KaiTi, STKaiti, serif';
     ctx.fillText('解：设函数的顶点为 P……', -166, -38);
@@ -349,18 +349,132 @@ function drawNotebook(ctx, scene) {
   }
   ctx.restore();
 
-  if (doodlePath?.length > 1) {
+  if (doodleStrokes?.length) {
     ctx.save();
+    roundedRect(ctx, PAPER.left, PAPER.top, PAPER.right - PAPER.left, PAPER.bottom - PAPER.top, 7);
+    ctx.clip();
     ctx.strokeStyle = '#334d76';
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(doodlePath[0].x, doodlePath[0].y);
-    for (const point of doodlePath.slice(1)) ctx.lineTo(point.x, point.y);
+    for (const stroke of doodleStrokes) {
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (let index = 1; index < stroke.length; index += 1) ctx.lineTo(stroke[index].x, stroke[index].y);
+    }
     ctx.stroke();
     ctx.restore();
   }
+}
+
+function drawPlane(ctx) {
+  ctx.fillStyle = '#f3f9ea';
+  ctx.strokeStyle = '#668480';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-88, 24);
+  ctx.lineTo(94, -36);
+  ctx.lineTo(26, 40);
+  ctx.lineTo(-10, 14);
+  ctx.lineTo(-25, 35);
+  ctx.lineTo(-29, 19);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-10, 14);
+  ctx.lineTo(94, -36);
+  ctx.stroke();
+}
+
+function drawFoldingPaper(ctx, folds) {
+  ctx.save();
+  ctx.translate(480, 520);
+  if (folds === PLANE_FOLDS.length) {
+    drawPlane(ctx);
+    ctx.restore();
+    return;
+  }
+  const width = 202 - folds * 29;
+  ctx.fillStyle = '#f3f9ea';
+  ctx.strokeStyle = '#668480';
+  ctx.lineWidth = 2;
+  roundedRect(ctx, -width / 2, -60, width, 120, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  for (let index = 0; index < folds; index += 1) {
+    const direction = PLANE_FOLDS[index];
+    ctx.fillStyle = index % 2 ? '#d4e4d9' : '#e3ebe0';
+    ctx.beginPath();
+    ctx.moveTo(direction * width / 2, -58 + index * 22);
+    ctx.lineTo(direction * width / 2, 60);
+    ctx.lineTo(0, index * 24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  const direction = PLANE_FOLDS[folds];
+  ctx.strokeStyle = '#54796b';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([7, 5]);
+  ctx.beginPath();
+  ctx.moveTo(-direction * 48, 0);
+  ctx.lineTo(direction * 48, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(direction * 32, -14);
+  ctx.lineTo(direction * 48, 0);
+  ctx.lineTo(direction * 32, 14);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFlyingPlane(ctx, flight) {
+  const progress = 1 - flight.remaining / PLANE_FLIGHT[flight.mode].seconds;
+  const far = flight.mode === 'far';
+  ctx.save();
+  ctx.translate(480 + (far ? 99 : -116) * progress, 520 - (far ? 240 : 102) * progress - 65 * Math.sin(Math.PI * progress));
+  ctx.rotate((far ? -0.52 : -2.9) + 0.48 * progress);
+  const scale = 0.9 - progress * (far ? 0.7 : 0.38);
+  ctx.scale(scale, scale);
+  drawPlane(ctx);
+  ctx.restore();
+}
+
+function drawHandheld(ctx, game) {
+  const { x, y, halfWidth, halfHeight, screenHalfWidth } = HANDHELD;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#253b50';
+  roundedRect(ctx, -halfWidth, -halfHeight, halfWidth * 2, halfHeight * 2, 16);
+  ctx.fill();
+  ctx.fillStyle = game.hit > 0 ? '#e7a471' : '#a6ce83';
+  ctx.fillRect(-screenHalfWidth, -56, screenHalfWidth * 2, 112);
+  ctx.strokeStyle = '#6c9a65';
+  for (const x of [-24, 24]) {
+    ctx.beginPath();
+    ctx.moveTo(x, -35);
+    ctx.lineTo(x, 51);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#234c3e';
+  ctx.font = '700 15px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${game.dodged}/${HANDHELD.goal}`, 0, -40);
+  ctx.fillRect((game.obstacle - 1) * 48 - 13, -32 + game.progress * 69, 26, 12);
+  const player = (game.lane - 1) * 48;
+  ctx.beginPath();
+  ctx.moveTo(player, 29);
+  ctx.lineTo(player + 13, 47);
+  ctx.lineTo(player - 13, 47);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#d2e0dd';
+  ctx.fillText('◀', -94, 7);
+  ctx.fillText('▶', 94, 7);
+  ctx.restore();
 }
 
 function drawHands(ctx, scene) {
@@ -384,21 +498,31 @@ function drawHands(ctx, scene) {
 
   if (tool === 'spin') {
     ctx.save();
-    ctx.translate(480, 520);
-    ctx.rotate(spinAngle + time * (state?.inputActive ? 0.8 : 0));
+    ctx.translate(SPIN.x, SPIN.y);
+    const warning = state.watchers.some((watcher) => watcher.mode === 'warn');
+    const riskColor = warning || state.suspicion >= 60 ? '#db614e' : '#8d632d';
+    ctx.strokeStyle = riskColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, SPIN.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (state.inputActive) {
+      const progress = state.spinTurnBuffer;
+      const start = spinAngle - progress * Math.PI * 2;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, 0, SPIN.radius, start, spinAngle, progress < 0);
+      ctx.stroke();
+    }
+    ctx.rotate(spinAngle + (warning && state.inputActive ? Math.sin(time * 32) * 0.1 : 0));
     ctx.fillStyle = '#254d90';
     roundedRect(ctx, -102, -6, 204, 12, 6);
     ctx.fill();
     ctx.fillStyle = '#e7b941';
     ctx.fillRect(69, -6, 25, 12);
     ctx.restore();
-    if (state?.inputActive) {
-      ctx.strokeStyle = 'rgb(241 202 85 / 48%)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(480, 520, 78, -0.7, Math.PI * 1.45);
-      ctx.stroke();
-    }
   } else if (tool === 'doodle' && state?.inputActive) {
     ctx.save();
     ctx.translate(rightX - 20, handY - 20);
@@ -433,45 +557,10 @@ function drawHands(ctx, scene) {
     ctx.font = '700 12px Microsoft YaHei, sans-serif';
     ctx.fillText(`${Math.min(4, state?.snackBites || 0)} 口`, -18, 28);
     ctx.restore();
-  } else if (tool === 'plane') {
-    ctx.save();
-    const thrown = state?.planeStage === 2;
-    ctx.translate(thrown ? 480 + Math.sin(time * 3) * 100 : 480, thrown ? 400 : 520);
-    ctx.rotate(thrown ? -0.25 : -0.08);
-    ctx.fillStyle = '#eef6f0';
-    ctx.strokeStyle = '#7d9a96';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-100, 28);
-    ctx.lineTo(108, -42);
-    ctx.lineTo(28, 48);
-    ctx.lineTo(-10, 17);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-10, 17);
-    ctx.lineTo(108, -42);
-    ctx.stroke();
-    ctx.restore();
+  } else if (tool === 'plane' && !state.planeFlight) {
+    drawFoldingPaper(ctx, state.planeFolds);
   } else if (tool === 'console') {
-    ctx.save();
-    ctx.translate(480, 520);
-    ctx.fillStyle = '#253b50';
-    roundedRect(ctx, -112, -62, 224, 124, 16);
-    ctx.fill();
-    ctx.fillStyle = '#90c777';
-    ctx.fillRect(-65, -43, 130, 78);
-    ctx.fillStyle = '#1f4e3c';
-    for (let y = -32; y < 28; y += 15) for (let x = -52; x < 54; x += 15) if ((x + y) % 30 === 0) ctx.fillRect(x, y, 10, 10);
-    ctx.fillStyle = '#d9e4e8';
-    ctx.fillRect(-94, -6, 34, 10);
-    ctx.fillRect(-82, -18, 10, 34);
-    ctx.beginPath();
-    ctx.arc(86, -11, 8, 0, Math.PI * 2);
-    ctx.arc(70, 13, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    drawHandheld(ctx, state.handheld);
   }
 }
 
@@ -536,6 +625,7 @@ export function renderClassroom(ctx, width, height, scene) {
   drawNotebook(ctx, scene);
   drawComicDrawer(ctx, scene);
   drawHands(ctx, scene);
+  if (scene.state?.planeFlight) drawFlyingPlane(ctx, scene.state.planeFlight);
   drawDanger(ctx, scene);
   ctx.restore();
 }

@@ -13,8 +13,10 @@ import {
   setInputActive,
   applyGesture,
   startNextLesson,
+  throwPlane,
   updateGame,
 } from '../web/classroom-slacking/core.js';
+import { HANDHELD, PLANE_FOLDS } from '../web/classroom-slacking/desk-actions.js';
 
 const fixedRandom = () => 0.5;
 
@@ -53,7 +55,7 @@ test('V3 课堂：空格/Esc 对应的收好动作会清除当前动作但保留
   assert.ok(events.some((event) => event.type === 'packing'));
 });
 
-test('V3 课堂：七种动作都有独立的手势反馈和完成事件', () => {
+test('课堂：涂鸦、纸条、零食和漫画有独立的完成反馈', () => {
   const state = createGameState(fixedRandom);
 
   setActiveTool(state, 'doodle');
@@ -71,19 +73,95 @@ test('V3 课堂：七种动作都有独立的手势反馈和完成事件', () =>
   assert.ok(snackEvents.some((event) => event.type === 'snack-finished'));
   assert.equal(state.snackBites, 0);
 
-  setActiveTool(state, 'plane');
-  assert.ok(applyGesture(state, 'plane', 0.7).some((event) => event.type === 'plane-folded'));
-  assert.ok(applyGesture(state, 'plane', -0.2).some((event) => event.type === 'plane-thrown'));
-  assert.equal(state.planeStage, 2);
-
-  setActiveTool(state, 'console');
-  const consoleEvents = [1, 2, 3, 4, 5, 6].flatMap((step) => applyGesture(state, 'console', step));
-  assert.ok(consoleEvents.some((event) => event.type === 'console-clear'));
+  setActiveTool(state, 'comic');
+  assert.ok(applyGesture(state, 'comic', 0.9).some((event) => event.type === 'comic-open'));
   assert.ok(state.memories.includes('new-hero'));
   assert.ok(state.memories.includes('paper-route'));
   assert.ok(state.memories.includes('snack-time'));
+  assert.ok(state.memories.includes('desk-diver'));
+});
+
+test('纸飞机：依次折叠，可跨课短投，远投每局一次且风险更高', () => {
+  const state = createGameState(fixedRandom);
+  const fold = () => PLANE_FOLDS.flatMap((direction) => applyGesture(state, 'plane', direction));
+  setActiveTool(state, 'plane');
+  assert.deepEqual(applyGesture(state, 'plane', -1), []);
+  assert.deepEqual(throwPlane(state, 'short'), []);
+  assert.ok(fold().some((event) => event.type === 'plane-folded'));
+  assert.ok(throwPlane(state, 'short').some((event) => event.type === 'plane-thrown'));
+  const shortExposure = state.stowTimer;
+  const shortScore = state.score;
+  const shortRisk = state.suspicion;
   assert.ok(state.memories.includes('paper-legend'));
+  assert.equal(state.farThrowUsed, false);
+
+  finishLesson(state);
+  startNextLesson(state, fixedRandom);
+  fold();
+  const before = { score: state.score, suspicion: state.suspicion };
+  throwPlane(state, 'far');
+  assert.ok(state.score - before.score > shortScore);
+  assert.ok(state.suspicion - before.suspicion > shortRisk);
+  assert.ok(state.stowTimer > shortExposure);
+  assert.equal(state.farThrowUsed, true);
+  setActiveTool(state, 'doodle');
+  assert.equal(state.planeFlight.mode, 'far');
+  assert.equal(isExposed(state), true);
+
+  finishLesson(state);
+  startNextLesson(state, fixedRandom);
+  setActiveTool(state, 'plane');
+  fold();
+  assert.deepEqual(throwPlane(state, 'far'), []);
+  assert.ok(throwPlane(state, 'short').some((event) => event.type === 'plane-thrown'));
+});
+
+test('掌机：左右换道，碰撞涨怀疑，收好可恢复原进度，躲过六次通关', () => {
+  const state = createGameState(fixedRandom);
+  const game = state.handheld;
+  state.watchers[0].timer = 100;
+  state.nextEventTimer = state.nextSpeechTimer = 100;
+  const step = (seconds) => {
+    const events = [];
+    for (let time = 0; time < seconds; time += 0.04) events.push(...updateGame(state, 0.04, fixedRandom));
+    return events;
+  };
+  setActiveTool(state, 'console');
+  applyGesture(state, 'console', -1);
+  assert.equal(game.lane, 0);
+  assert.equal(isExposed(state), true);
+  step(0.4);
+  focusNow(state);
+  const progress = game.progress;
+  step(0.8);
+  assert.equal(game.progress, progress);
+  applyGesture(state, 'console', 1);
+  assert.equal(game.lane, 1);
+  assert.ok(step(0.8).some((event) => event.type === 'handheld-hit'));
+  assert.equal(game.dodged, 0);
+  for (let index = 0; index < HANDHELD.goal; index += 1) {
+    applyGesture(state, 'console', game.lane === 0 ? 1 : -1);
+    const events = step(HANDHELD.interval);
+    if (index === HANDHELD.goal - 1) assert.ok(events.some((event) => event.type === 'console-clear'));
+  }
+  assert.equal(game.active, false);
   assert.ok(state.memories.includes('last-level'));
+});
+
+test('转笔：反复小幅来回不算一圈，连续快转的怀疑涨得更多', () => {
+  const state = createGameState(fixedRandom);
+  setInputActive(state, true);
+  for (let index = 0; index < 12; index += 1) {
+    applyGesture(state, 'spin', 0.25);
+    applyGesture(state, 'spin', -0.25);
+  }
+  assert.equal(state.stats.spinTurns, 0);
+  const first = applyGesture(state, 'spin', 1)[0];
+  state.lessonTime += 0.5;
+  const fast = applyGesture(state, 'spin', 1)[0];
+  assert.equal(first.type, 'spin-turn');
+  assert.equal(fast.fast, true);
+  assert.ok(fast.suspicion > first.suspicion);
 });
 
 test('V3 课堂：转笔和涂鸦会持续得分，松手后进入收好状态', () => {

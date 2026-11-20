@@ -1,3 +1,5 @@
+import { PLANE_FLIGHT, PLANE_FOLDS, advanceHandheld, createHandheld, moveHandheld } from './desk-actions.js';
+
 export const LESSONS = Object.freeze([
   Object.freeze({
     id: 'math', title: '数学课', topic: '函数与几何', duration: 58, scoreScale: 1, alertScale: 1,
@@ -17,7 +19,7 @@ export const LESSONS = Object.freeze([
 ]);
 
 export const TOOLS = Object.freeze([
-  Object.freeze({ id: 'spin', name: '转笔', mark: '↻', scoreRate: 28, suspicionRate: 2.6, hide: 0.12, noise: 0.05 }),
+  Object.freeze({ id: 'spin', name: '转笔', mark: '↻', scoreRate: 28, suspicionRate: 3.9, hide: 0.12, noise: 0.05 }),
   Object.freeze({ id: 'doodle', name: '涂鸦', mark: '✎', scoreRate: 34, suspicionRate: 4, hide: 0.18, noise: 0.1 }),
   Object.freeze({ id: 'note', name: '传纸条', mark: '▱', scoreRate: 38, suspicionRate: 5.5, hide: 0.25, noise: 0.18 }),
   Object.freeze({ id: 'snack', name: '偷吃零食', mark: '◒', scoreRate: 52, suspicionRate: 7.2, hide: 0.35, noise: 0.7 }),
@@ -118,8 +120,9 @@ export function createGameState(options = {}, maybeRandom = Math.random) {
     activeTool: TOOLS[0].id, inputActive: false, performing: false,
     actionIntensity: 0, actionFresh: 0, stowTimer: 0, combo: 1,
     suspicion: 0, focusLock: 0, sinceFocused: 99, comicOpen: 0,
-    noteProgress: 0, noteTarget: 0, snackBites: 0, planeFold: 0, planeStage: 0, consoleSteps: 0,
-    doodleProgress: 0, spinTurns: 0, spinTurnBuffer: 0,
+    noteProgress: 0, noteTarget: 0, snackBites: 0,
+    planeFolds: 0, planeFlight: null, farThrowUsed: false, handheld: createHandheld(),
+    doodleProgress: 0, spinTurnBuffer: 0, lastSpinTurnAt: -Infinity,
     lastCaughtBy: null, classEvent: null, classEventTimer: 0, nextEventTimer: 8,
     speechText: '', speechTimer: 0, speechFake: false, nextSpeechTimer: 7, lastSpeechBand: 0,
     memories: normalizeMemories(config.memories),
@@ -136,18 +139,24 @@ export function startNextLesson(state, random = Math.random) {
   return [{ type: 'lesson-start', lessonIndex: state.lessonIndex }];
 }
 
-export function setActiveTool(state, toolId) {
-  if (state.phase !== 'playing' || !TOOLS.some((tool) => tool.id === toolId) || state.activeTool === toolId) return false;
-  const oldTool = toolById(state.activeTool);
-  if (isExposed(state)) state.stowTimer = Math.max(state.stowTimer, oldTool.hide * 0.62);
-  state.activeTool = toolId;
+function clearAction(state) {
   state.inputActive = false;
   state.performing = false;
   state.actionIntensity = 0;
   state.actionFresh = 0;
   state.comicOpen = 0;
-  state.planeStage = 0;
-  state.planeFold = 0;
+  state.planeFolds = 0;
+  state.handheld.active = false;
+  state.spinTurnBuffer = 0;
+  state.lastSpinTurnAt = -Infinity;
+}
+
+export function setActiveTool(state, toolId) {
+  if (state.phase !== 'playing' || !TOOLS.some((tool) => tool.id === toolId) || state.activeTool === toolId) return false;
+  const oldTool = toolById(state.activeTool);
+  if (isExposed(state)) state.stowTimer = Math.max(state.stowTimer, oldTool.hide * 0.62);
+  clearAction(state);
+  state.activeTool = toolId;
   return true;
 }
 
@@ -163,6 +172,10 @@ export function setInputActive(state, active) {
     state.stowTimer = Math.max(state.stowTimer, toolById(state.activeTool).hide);
     events.push({ type: 'packing', duration: state.stowTimer });
   }
+  if (!active && state.activeTool === 'spin') {
+    state.spinTurnBuffer = 0;
+    state.lastSpinTurnAt = -Infinity;
+  }
   return events;
 }
 
@@ -170,17 +183,27 @@ export function focusNow(state) {
   const events = [];
   if (state.phase !== 'playing' || state.focusLock > 0) return events;
   const wasExposed = isExposed(state);
-  state.inputActive = false;
-  state.performing = false;
-  state.actionIntensity = 0;
-  state.actionFresh = 0;
-  state.comicOpen = 0;
-  state.planeStage = 0;
-  state.planeFold = 0;
+  clearAction(state);
   if (wasExposed) {
     state.stowTimer = Math.max(state.stowTimer, toolById(state.activeTool).hide * 0.72);
     events.push({ type: 'packing', duration: state.stowTimer });
   }
+  return events;
+}
+
+export function throwPlane(state, mode) {
+  const flight = PLANE_FLIGHT[mode];
+  if (!flight || state.phase !== 'playing' || state.activeTool !== 'plane' || state.focusLock > 0 ||
+      state.planeFolds !== PLANE_FOLDS.length || state.planeFlight || (mode === 'far' && state.farThrowUsed)) return [];
+
+  clearAction(state);
+  state.planeFlight = { mode, remaining: flight.seconds };
+  state.farThrowUsed ||= mode === 'far';
+  state.stowTimer = Math.max(state.stowTimer, flight.exposure);
+  state.suspicion = clamp(state.suspicion + flight.suspicion, 0, 100);
+  state.score += flight.score;
+  const events = [{ type: 'plane-thrown', mode, score: flight.score }];
+  unlockMemory(state, 'paper-legend', events);
   return events;
 }
 
@@ -189,16 +212,21 @@ export function applyGesture(state, kind, amount) {
   if (state.phase !== 'playing' || state.focusLock > 0 || kind !== state.activeTool) return events;
   const value = Number(amount) || 0;
   if (kind === 'spin') {
-    const turns = Math.max(0, value);
-    state.performing = state.inputActive || turns > 0;
+    if (!state.inputActive || value === 0) return events;
+    state.performing = true;
     state.actionFresh = 0.24;
-    state.actionIntensity = clamp(state.actionIntensity + turns * 2.5, 0, 1.25);
-    state.spinTurns += turns;
-    state.spinTurnBuffer += turns;
-    state.stats.spinTurns += turns;
-    while (state.spinTurnBuffer >= 1) {
-      state.spinTurnBuffer -= 1;
-      events.push({ type: 'spin-turn' });
+    state.actionIntensity = clamp(state.actionIntensity + Math.abs(value) * 2.5, 0, 1.25);
+    state.spinTurnBuffer += value;
+    while (Math.abs(state.spinTurnBuffer) >= 0.9999) {
+      const remainder = Math.max(0, Math.abs(state.spinTurnBuffer) - 1);
+      state.spinTurnBuffer = Math.sign(state.spinTurnBuffer) * remainder;
+      const fast = state.lessonTime - state.lastSpinTurnAt <= 0.85;
+      const suspicion = fast ? 4 : 2;
+      state.suspicion = clamp(state.suspicion + suspicion, 0, 100);
+      state.score += fast ? 22 : 12;
+      state.lastSpinTurnAt = state.lessonTime;
+      state.stats.spinTurns += 1;
+      events.push({ type: 'spin-turn', fast, suspicion });
     }
     if (state.stats.spinTurns >= 4) unlockMemory(state, 'pen-master', events);
   } else if (kind === 'doodle') {
@@ -254,56 +282,26 @@ export function applyGesture(state, kind, amount) {
       events.push({ type: 'focused' });
     }
   } else if (kind === 'plane') {
-    if (state.planeStage === 0) {
-      state.planeFold = clamp(state.planeFold + Math.abs(value) * 1.8, 0, 1);
-      state.performing = state.planeFold > 0.04;
-      state.actionFresh = 0.2;
-      state.actionIntensity = state.planeFold;
-      if (state.planeFold >= 1) {
-        state.planeStage = 1;
-        events.push({ type: 'plane-folded' });
-      }
-    } else if (state.planeStage === 1 && value < -0.08) {
-      state.planeStage = 2;
-      state.performing = true;
-      state.actionFresh = 0.35;
-      state.actionIntensity = 1;
-      state.score += 150;
-      state.suspicion += 25;
-      events.push({ type: 'plane-thrown' });
-      unlockMemory(state, 'paper-legend', events);
-    }
+    if (state.planeFlight || value !== PLANE_FOLDS[state.planeFolds]) return events;
+    state.planeFolds += 1;
+    state.suspicion = clamp(state.suspicion + 2, 0, 100);
+    events.push({ type: state.planeFolds === PLANE_FOLDS.length ? 'plane-folded' : 'plane-fold' });
   } else if (kind === 'console') {
-    state.performing = true;
-    state.actionFresh = 0.18;
-    state.actionIntensity = 1;
-    state.consoleSteps += 1;
-    if (state.consoleSteps >= 6) {
-      state.consoleSteps = 0;
-      state.score += 110;
-      events.push({ type: 'console-clear' });
-      unlockMemory(state, 'last-level', events);
-    }
+    moveHandheld(state.handheld, value);
   }
   return events;
 }
 
 export function isExposed(state) {
   if (!state || state.phase !== 'playing') return false;
-  return state.stowTimer > 0 || state.inputActive || state.performing || state.comicOpen > 0.06 || state.planeStage > 0;
+  return state.stowTimer > 0 || state.inputActive || state.performing || state.comicOpen > 0.06 || state.handheld.active;
 }
 
 function catchPlayer(state, watcher, events) {
   state.strikes += 1;
   state.lastCaughtBy = watcher?.key || 'teacher';
-  state.inputActive = false;
-  state.performing = false;
-  state.actionIntensity = 0;
-  state.actionFresh = 0;
+  clearAction(state);
   state.stowTimer = 0;
-  state.comicOpen = 0;
-  state.planeStage = 0;
-  state.planeFold = 0;
   state.combo = 1;
   state.focusLock = 1.45;
   state.sinceFocused = 0;
@@ -418,7 +416,9 @@ export function updateGame(state, dt, random = Math.random) {
   if (state.activeTool === 'comic') {
     effort = state.comicOpen;
     if (effort > 0.06) state.stats.comicSeconds += step;
-  } else if (state.actionFresh > 0 && (state.inputActive || state.performing || state.planeStage === 2)) {
+  } else if (state.handheld.active) {
+    effort = 0.45;
+  } else if (state.actionFresh > 0 && (state.inputActive || state.performing)) {
     effort = clamp(state.actionIntensity, 0, 1);
   }
   state.actionIntensity = Math.max(state.activeTool === 'comic' ? state.comicOpen : 0, state.actionIntensity - step * 2.25);
@@ -456,14 +456,28 @@ export function updateGame(state, dt, random = Math.random) {
     if (state.phase === 'lost') return events;
   }
 
+  const handheldEvent = advanceHandheld(state.handheld, step);
+  if (handheldEvent) {
+    events.push({ type: handheldEvent });
+    if (handheldEvent === 'handheld-hit') state.suspicion = clamp(state.suspicion + 7, 0, 100);
+    if (handheldEvent === 'handheld-dodge') state.score += 10;
+    if (handheldEvent === 'console-clear') {
+      state.score += 120;
+      state.stowTimer = Math.max(state.stowTimer, toolById('console').hide);
+      unlockMemory(state, 'last-level', events);
+    }
+  }
+  if (state.planeFlight) {
+    state.planeFlight.remaining -= step;
+    if (state.planeFlight.remaining <= 0) state.planeFlight = null;
+  }
+
   state.lessonTime += step;
   const lesson = LESSONS[state.lessonIndex];
   if (state.lessonTime >= lesson.duration) {
     state.lessonTime = lesson.duration;
-    state.inputActive = false;
-    state.performing = false;
-    state.comicOpen = 0;
-    state.planeStage = 0;
+    clearAction(state);
+    state.planeFlight = null;
     state.combo = 1;
     for (const watcher of state.watchers) watcher.mode = 'off';
     events.push({ type: 'lesson-end', lessonIndex: state.lessonIndex });
