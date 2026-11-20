@@ -3,17 +3,18 @@
   <head>
     <meta charset='utf-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>
-    <meta name='theme-color' content='#173f38'>
+    <meta name='theme-color' content='#1f4742'>
     <title>课桌下的宇宙</title>
     <link rel='stylesheet' href='style.css'>
   </head>
   <body>
     <main id='game-shell' aria-label='课桌下的宇宙游戏'>
-      <canvas id='classroom' aria-label='教室场景'></canvas>
+      <canvas id='classroom' aria-label='初中教室场景'></canvas>
       <header id='hud' class='hud is-hidden' aria-live='polite'>
         <div class='hud-item score-box'><span>脑洞值</span><strong id='score'>0</strong></div>
-        <div class='hud-item lesson-box'><span id='lesson-count'>第 1 节</span><strong id='lesson-name'>数学课</strong></div>
-        <div class='hud-item time-box'><span>距离下课</span><strong id='time-left'>0:27</strong></div>
+        <div class='hud-item lesson-box'><span id='lesson-count'>第 1 节 / 3</span><strong id='lesson-name'>数学课</strong></div>
+        <div class='hud-item time-box'><span>距离下课</span><strong id='time-left'>0:34</strong></div>
+        <div class='hud-item suspicion-box'><span>老师怀疑</span><strong id='suspicion-value'>0</strong><i class='meter'><b id='suspicion-fill'></b></i></div>
         <div class='hud-item strike-box'><span>纪律记录</span><strong id='strikes' aria-label='零次被抓'><i></i><i></i><i></i></strong></div>
         <div class='lesson-progress' aria-hidden='true'><i id='lesson-progress-fill'></i></div>
       </header>
@@ -24,13 +25,26 @@
       </div>
       <div id='banner' class='banner' aria-live='assertive'></div>
       <div id='activity' class='activity is-hidden'>认真听课</div>
-      <div id='hold-prompt' class='hold-prompt is-hidden'>按住 · 开小差</div>
+      <div id='hold-prompt' class='hold-prompt is-hidden'>动起来</div>
+      <nav id='tool-dock' class='tool-dock is-hidden' aria-label='桌面装备'>
+        <button class='tool-button' type='button' data-tool='spin'><b>↻</b><span>转笔</span></button>
+        <button class='tool-button' type='button' data-tool='doodle'><b>✎</b><span>涂鸦</span></button>
+        <button class='tool-button' type='button' data-tool='comic'><b>▤</b><span>漫画</span></button>
+      </nav>
       <button id='sound-toggle' class='icon-button' type='button' aria-label='关闭声音' title='声音'>♪</button>
       <section id='screen' class='screen'>
-        <div class='screen-copy'>
-          <p class='eyebrow'>学生时代生存练习</p>
+        <div class='screen-copy intro-copy'>
+          <p class='eyebrow'>初中 · 课堂生存</p>
           <h1>课桌下的宇宙</h1>
           <p class='tagline'>老师转身以后，四十五分钟可以很长。</p>
+          <div class='loadout-picker' aria-label='选择两件装备'>
+            <p class='picker-label'>今天带什么？<span id='loadout-count'>2 / 2</span></p>
+            <div class='loadout-options'>
+              <button class='loadout-button is-selected' type='button' data-tool='spin'><b>↻</b><span>转笔</span><small>画圈</small></button>
+              <button class='loadout-button is-selected' type='button' data-tool='doodle'><b>✎</b><span>涂鸦</span><small>画线</small></button>
+              <button class='loadout-button' type='button' data-tool='comic'><b>▤</b><span>漫画</span><small>拖开</small></button>
+            </div>
+          </div>
           <button id='start-button' class='primary-button' type='button'>开始上课</button>
           <p id='best-score' class='best-score'></p>
         </div>

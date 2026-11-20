@@ -33,6 +33,20 @@ test('新工作区可预览网页，项目资料不通过预览端口公开', { 
   assert.equal((await fetch(`${base}/missing-file`)).status, 404);
   assert.equal((await fetch(`${base}/AGENTS.md`)).status, 404);
   assert.equal((await fetch(`${base}/%2e%2e%2fAGENTS.md`)).status, 403);
+  const scores = await fetch(`${base}/api/classroom-scores`);
+  assert.equal(scores.status, 200);
+  assert.deepEqual(await scores.json(), { scores: [] });
+  const rejectedScore = await fetch(`${base}/api/classroom-scores`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nickname: '测试', score: 100, run: { durationMs: 1, inputs: 1, lessons: 1 } }),
+  });
+  assert.equal(rejectedScore.status, 422);
+  const acceptedScore = await fetch(`${base}/api/classroom-scores`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nickname: '测试', score: 100, run: { durationMs: 8000, inputs: 1, lessons: 1 } }),
+  });
+  assert.equal(acceptedScore.status, 200);
+  assert.deepEqual((await acceptedScore.json()).scores, [{ nickname: '测试', score: 100 }]);
   const head = await fetch(base, { method: 'HEAD' });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), '');

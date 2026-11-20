@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mergeScore, normalizeRows, normalizeScore, normalizeNickname, validRunSummary } from '../web/classroom-slacking/leaderboard-core.js';
 
 const root = fileURLToPath(new URL('../web/', import.meta.url));
 const args = process.argv.slice(2);
@@ -22,16 +23,57 @@ const types = {
   '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream',
   '.woff2': 'font/woff2', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
 };
-const server = createServer(async (req, res) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { Allow: 'GET, HEAD' }).end();
-    return;
+let classroomScores = [];
+
+async function readJsonBody(req) {
+  let body = '';
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 16_384) throw new Error('body too large');
   }
+  return JSON.parse(body || '{}');
+}
+
+const server = createServer(async (req, res) => {
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
   } catch {
     res.writeHead(400).end('Bad request');
+    return;
+  }
+
+  if (pathname === '/api/classroom-scores') {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      const payload = JSON.stringify({ scores: normalizeRows(classroomScores) });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(req.method === 'HEAD' ? undefined : payload);
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'GET, HEAD, POST' }).end();
+      return;
+    }
+    try {
+      const payload = await readJsonBody(req);
+      if (!validRunSummary(payload.run)) {
+        res.writeHead(422, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'invalid run' }));
+        return;
+      }
+      classroomScores = mergeScore(classroomScores, {
+        nickname: normalizeNickname(payload.nickname),
+        score: normalizeScore(payload.score),
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ scores: classroomScores }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ error: 'invalid json' }));
+    }
+    return;
+  }
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD' }).end();
     return;
   }
   const file = resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
@@ -58,5 +100,5 @@ server.on('error', (error) => {
 });
 server.listen(port, '127.0.0.1', () => {
   console.log(`本地预览：http://127.0.0.1:${server.address().port}`);
-  console.log('Ctrl+C 停止；当前仅有协作检查页，尚无游戏。');
+  console.log('Ctrl+C 停止；课堂游戏入口：/classroom-slacking/index.html');
 });
