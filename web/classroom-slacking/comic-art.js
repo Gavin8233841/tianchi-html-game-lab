@@ -61,6 +61,28 @@ function dustCloud(ctx, x, y, color) {
   }
 }
 
+function paperPlane(ctx, x, y, angle = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#fff9e8';
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-38, -17);
+  ctx.lineTo(41, 0);
+  ctx.lineTo(-27, 23);
+  ctx.lineTo(-15, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-15, 6);
+  ctx.lineTo(41, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
 const panels = {
   quiz(ctx) {
     board(ctx, '③ = ？');
@@ -123,6 +145,37 @@ const panels = {
     character(ctx, 104, 80, 'lead', 'dust');
     character(ctx, 225, 79, 'monitor', 'shock');
     prop(ctx, 147, 99, 36, 18, '#ddae68');
+  },
+  'homework-call'(ctx) {
+    board(ctx, '交作业');
+    character(ctx, 228, 68, 'teacher');
+    prop(ctx, 189, 109, 78, 21, '#c88455');
+    prop(ctx, 200, 102, 34, 8, '#f5e6bd');
+  },
+  'homework-fold'(ctx) {
+    character(ctx, 60, 83, 'lead', 'shock');
+    character(ctx, 229, 80, 'mate');
+    prop(ctx, 98, 103, 106, 24, '#bd895c');
+    paperPlane(ctx, 151, 94, -0.3);
+  },
+  'homework-flight'(ctx) {
+    character(ctx, 68, 103, 'lead');
+    character(ctx, 256, 76, 'teacher', 'shock');
+    ctx.strokeStyle = '#a3564f';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath();
+    ctx.moveTo(74, 79);
+    ctx.quadraticCurveTo(117, 37, 160, 53);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    paperPlane(ctx, 175, 59, 0.14);
+  },
+  'homework-return'(ctx) {
+    character(ctx, 66, 89, 'lead', 'shock');
+    character(ctx, 246, 72, 'teacher');
+    paperPlane(ctx, 150, 76, Math.PI + 0.24);
+    prop(ctx, 110, 99, 94, 28, '#ffc5ab', '退件 · 补名字');
   },
 };
 

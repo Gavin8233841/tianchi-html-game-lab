@@ -17,7 +17,7 @@ import {
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
 import { drawComicPage } from './comic-art.js';
-import { COMIC, COMIC_STORIES, comicConfiscated, comicEnding } from './comics.js';
+import { COMIC, COMIC_STORIES, canFlipComicForward, comicConfiscated, comicEnding } from './comics.js';
 import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, canStartSpin, spinDelta } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
@@ -39,7 +39,6 @@ const doodleActions = document.getElementById('doodle-actions');
 const comicActions = document.getElementById('comic-actions');
 const comicPrevious = comicActions.querySelector('[data-comic-move="previous-page"]');
 const comicNext = comicActions.querySelector('[data-comic-move="next-page"]');
-const comicNextStory = document.getElementById('comic-next-story');
 const consoleActions = document.getElementById('console-actions');
 const planeActions = document.getElementById('plane-actions');
 const stowButton = document.getElementById('stow-tool');
@@ -127,9 +126,13 @@ function updateComicControls(locked) {
   const ending = comicEnding(comic);
   comicActions.classList.toggle('is-hidden', state.activeTool !== 'comic' || !pageOpen);
   comicPrevious.disabled = locked || comic.page === 0;
-  comicNext.disabled = locked || ending;
-  comicNextStory.disabled = locked;
-  comicNextStory.classList.toggle('is-hidden', !ending || !comic.finished || comic.story >= COMIC_STORIES.length - 1);
+  comicNext.disabled = locked || !canFlipComicForward(comic);
+  const nextStory = ending && canFlipComicForward(comic);
+  const nextLabel = nextStory ? '下一篇' : '→';
+  if (comicNext.textContent !== nextLabel) {
+    comicNext.textContent = nextLabel;
+    comicNext.setAttribute('aria-label', nextStory ? '下一篇' : '下一格');
+  }
 }
 
 function updateHud() {
@@ -177,7 +180,8 @@ function updateHud() {
     if (comic.open < COMIC.openForPage) promptEl.textContent = comic.page ? '下拉继续看 ↓' : '下拉打开漫画 ↓';
     else if (!comicEnding(comic)) promptEl.textContent = '横划翻页 · 上推收好';
     else if (!comic.finished && comic.open < COMIC.openForEnding) promptEl.textContent = '再往下拉看结尾 ↓';
-    else promptEl.textContent = comic.finished ? '读完了 · 上推收好' : '看到结尾了';
+    else if (!comic.finished) promptEl.textContent = '看到结尾了';
+    else promptEl.textContent = canFlipComicForward(comic) ? '横划看下一篇 · 上推收好' : '四篇读完 · 上推收好';
   }
   else if (state.activeTool === 'plane') {
     const arrow = PLANE_FOLDS[state.planeFolds] === -1 ? '←' : '→';
