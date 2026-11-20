@@ -91,6 +91,22 @@ button { font: inherit; }
 }
 .desk-controls .tool-button { min-width: 0; min-height: 45px; padding: 2px; }
 .desk-controls .tool-button span { white-space: nowrap; }
+.comic-reader canvas {
+  display: block;
+  width: min(100%, 560px, 106dvh);
+  height: auto;
+  margin: 0 auto;
+  box-shadow: 0 6px 24px rgb(12 25 24 / 70%);
+}
+.comic-reader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.comic-reader-actions button { min-width: 82px; min-height: 44px; }
+.comic-reader-actions button:disabled { opacity: 0.5; cursor: default; }
 
 @media (max-width: 760px) {
   .hud { grid-template-columns: repeat(4, minmax(0, 1fr)); }
