@@ -16,7 +16,7 @@ import {
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
-import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, SPIN } from './desk-actions.js';
+import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, canStartSpin, spinDelta } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
 const canvas = document.getElementById('classroom');
@@ -61,8 +61,8 @@ let pointerId = null;
 let lastPoint = null;
 let pointerStart = null;
 let deskDrag = null;
-let lastGestureAngle = null;
 let spinAngle = 0;
+let spinFlash = 0;
 let doodleStrokes = [];
 let activeStroke = null;
 let lastFrame = performance.now();
@@ -130,7 +130,7 @@ function updateHud() {
   farButton.textContent = state.farThrowUsed ? '远投已用' : `冒险远投 +${PLANE_FLIGHT.far.score}`;
   if (state.focusLock > 0) promptEl.textContent = '别动 · 老师还在看';
   else if (exposed && state.watchers.some((watcher) => watcher.mode === 'warn')) promptEl.textContent = '快收好！';
-  else if (state.activeTool === 'spin') promptEl.textContent = '沿圆环转笔';
+  else if (state.activeTool === 'spin') promptEl.textContent = '按住，在笔旁画圈';
   else if (state.activeTool === 'doodle') promptEl.textContent = '在纸上画';
   else if (state.activeTool === 'note') {
     if (state.note.incoming) promptEl.textContent = '同桌回信 · 点纸条收好';
@@ -211,6 +211,7 @@ function processEvents(events) {
     else if (event.type === 'fake') { showBanner('假动作！', 0.7); audio.fake(); }
     else if (event.type === 'teacher-line') { showBanner(`老师：“${event.line}”`, 2); audio.teacherLine(event.line, event.fake); }
     else if (event.type === 'spin-turn') {
+      spinFlash = 0.22;
       audio.tap(event.fast ? 490 : 350);
       showBanner(`${event.fast ? '快转！' : '转了一圈'} · 怀疑 +${event.suspicion}`, 0.6);
     }
@@ -255,6 +256,7 @@ function startGame() {
   resetPointer();
   doodleStrokes = [];
   spinAngle = 0;
+  spinFlash = 0;
   hud.classList.remove('is-hidden');
   hideScreen();
   showBanner('第一节 · 数学课', 1.5);
@@ -344,22 +346,8 @@ consoleActions.addEventListener('click', (event) => {
   if (button) processEvents(applyGesture(state, 'console', Number(button.dataset.direction)));
 });
 
-function pointFromEvent(event) {
-  return toLogicalPoint(event.clientX, event.clientY, canvas.getBoundingClientRect());
-}
-
-function normalizeAngle(angle) {
-  let value = angle;
-  while (value > Math.PI) value -= Math.PI * 2;
-  while (value < -Math.PI) value += Math.PI * 2;
-  return value;
-}
-
-function spinPointAngle(point) {
-  const dx = point.x - SPIN.x;
-  const dy = point.y - SPIN.y;
-  const radius = Math.hypot(dx, dy);
-  return radius >= SPIN.inner && radius <= SPIN.outer ? Math.atan2(dy, dx) : null;
+function pointFromEvent(event, rect = canvas.getBoundingClientRect()) {
+  return toLogicalPoint(event.clientX, event.clientY, rect);
 }
 
 function onPaper(point) {
@@ -386,7 +374,7 @@ function handlePointerDown(event) {
     return;
   }
   if (state.activeTool === 'doodle' && !onPaper(point)) return;
-  if (state.activeTool === 'spin' && spinPointAngle(point) === null) return;
+  if (state.activeTool === 'spin' && !canStartSpin(point)) return;
   if (state.activeTool === 'plane' && (Math.abs(point.x - 480) > 118 || Math.abs(point.y - 520) > 83)) return;
   if (state.activeTool === 'note') {
     if (!nearNote(point) || state.note.handoff > 0) return;
@@ -405,7 +393,6 @@ function handlePointerDown(event) {
   if (state.activeTool === 'note' || state.activeTool === 'snack') {
     deskDrag = { dx: 0, dy: 0, distance: 0, startedAt: event.timeStamp, point };
   }
-  if (state.activeTool === 'spin') lastGestureAngle = spinPointAngle(point);
   processEvents(setInputActive(state, true));
 }
 
@@ -430,21 +417,28 @@ function finishDeskDrag(event, point) {
   }
 }
 
+function trackSpin(event) {
+  const rect = canvas.getBoundingClientRect();
+  // Coalesced samples preserve the curve when a fast drag fits in one pointermove.
+  const samples = event.getCoalescedEvents?.();
+  for (const sample of samples?.length ? samples : [event]) {
+    const point = pointFromEvent(sample, rect);
+    const delta = spinDelta(lastPoint, point);
+    lastPoint = point;
+    if (delta === 0) continue;
+    spinAngle = (spinAngle + delta) % (Math.PI * 2);
+    processEvents(applyGesture(state, 'spin', delta / (Math.PI * 2)));
+  }
+}
+
 function handlePointerMove(event) {
   if (!state || event.pointerId !== pointerId || state.phase !== 'playing') return;
-  const point = pointFromEvent(event);
   if (state.activeTool === 'spin') {
-    const angle = spinPointAngle(point);
-    const previous = lastGestureAngle;
-    lastGestureAngle = angle;
-    if (angle === null || previous === null) {
-      state.spinTurnBuffer = 0;
-      return;
-    }
-    const delta = normalizeAngle(angle - previous);
-    spinAngle += delta;
-    processEvents(applyGesture(state, 'spin', delta / (Math.PI * 2)));
-  } else if (state.activeTool === 'doodle') {
+    trackSpin(event);
+    return;
+  }
+  const point = pointFromEvent(event);
+  if (state.activeTool === 'doodle') {
     if (!onPaper(point)) {
       activeStroke = lastPoint = null;
       return;
@@ -468,6 +462,7 @@ function handlePointerMove(event) {
 
 function releasePointer(event) {
   if (!state || event.pointerId !== pointerId) return;
+  if (event.type === 'pointerup' && state.activeTool === 'spin') trackSpin(event);
   if (event.type === 'pointerup' && deskDrag) finishDeskDrag(event, pointFromEvent(event));
   if (event.type === 'pointerup' && state.activeTool === 'plane') {
     const end = pointFromEvent(event);
@@ -485,7 +480,6 @@ function resetPointer(releaseCapture = true) {
   pointerId = null;
   lastPoint = pointerStart = null;
   deskDrag = null;
-  lastGestureAngle = null;
   activeStroke = null;
   if (releaseCapture && released !== null && canvas.hasPointerCapture?.(released)) canvas.releasePointerCapture(released);
 }
@@ -617,7 +611,7 @@ function render(time) {
   teacherTurn += (teacherTarget - teacherTurn) * 0.12;
   corridorPresence += (corridorTarget - corridorPresence) * 0.1;
   monitorTurn += (monitorTarget - monitorTurn) * 0.14;
-  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, doodleStrokes, deskDrag });
+  renderClassroom(g, width, height, { state, time, teacherTurn, corridorPresence, monitorTurn, shake, spinAngle, spinFlash, doodleStrokes, deskDrag });
 }
 
 function frame(now) {
@@ -626,6 +620,7 @@ function frame(now) {
   if (state) { processEvents(updateGame(state, dt)); updateHud(); }
   if (bannerTimer > 0) { bannerTimer -= dt; if (bannerTimer <= 0) bannerEl.textContent = ''; }
   shake = Math.max(0, shake - dt * 2.7);
+  spinFlash = Math.max(0, spinFlash - dt);
   render(now / 1000);
   requestAnimationFrame(frame);
 }
