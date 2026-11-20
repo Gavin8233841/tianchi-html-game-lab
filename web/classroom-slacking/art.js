@@ -603,7 +603,7 @@ function drawSnack(ctx, snack, drag) {
 }
 
 function drawHands(ctx, scene) {
-  const { state, time, spinAngle } = scene;
+  const { state, time, spinAngle, spinFlash } = scene;
   const tool = state?.activeTool;
   const comic = state?.comicOpen || 0;
   const leftX = tool === 'comic' ? 350 - comic * 38 : tool === 'spin' ? 410 : 305;
@@ -633,6 +633,12 @@ function drawHands(ctx, scene) {
     ctx.arc(0, 0, SPIN.radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+    if (spinFlash > 0 && !warning) {
+      ctx.strokeStyle = `rgb(241 184 61 / ${spinFlash / 0.22})`;
+      ctx.lineWidth = 6;
+      ctx.stroke();
+      ctx.strokeStyle = riskColor;
+    }
     if (state.inputActive) {
       const progress = state.spinTurnBuffer;
       const start = spinAngle - progress * Math.PI * 2;

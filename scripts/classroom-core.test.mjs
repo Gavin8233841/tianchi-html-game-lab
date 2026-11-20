@@ -16,7 +16,7 @@ import {
   throwPlane,
   updateGame,
 } from '../web/classroom-slacking/core.js';
-import { HANDHELD, PLANE_FOLDS } from '../web/classroom-slacking/desk-actions.js';
+import { HANDHELD, PLANE_FOLDS, SPIN, canStartSpin, spinDelta } from '../web/classroom-slacking/desk-actions.js';
 
 const fixedRandom = () => 0.5;
 
@@ -263,6 +263,46 @@ test('转笔：反复小幅来回不算一圈，连续快转的怀疑涨得更�
   assert.equal(first.type, 'spin-turn');
   assert.equal(fast.fast, true);
   assert.ok(fast.suspicion > first.suspicion);
+});
+
+test('转笔：偏离提示环的椭圆也能完成整圈，支持两个方向', () => {
+  assert.equal(canStartSpin({ x: SPIN.x, y: SPIN.y }), true);
+  assert.equal(canStartSpin({ x: SPIN.x + 149, y: SPIN.y }), true);
+  assert.equal(canStartSpin({ x: SPIN.x + 200, y: SPIN.y }), false);
+
+  for (const direction of [-1, 1]) {
+    const state = createGameState(fixedRandom);
+    setInputActive(state, true);
+    let previous = { x: SPIN.x + 159, y: SPIN.y };
+    for (let i = 1; i <= 24; i += 1) {
+      const theta = direction * i * Math.PI / 12;
+      const point = { x: SPIN.x + 18 + 141 * Math.cos(theta), y: SPIN.y + 24 * Math.sin(theta) };
+      applyGesture(state, 'spin', spinDelta(previous, point) / (Math.PI * 2));
+      previous = point;
+    }
+    assert.equal(state.stats.spinTurns, 1);
+  }
+});
+
+test('转笔：经过笔心或横划时不丢已有进度，也不会误算半圈', () => {
+  const state = createGameState(fixedRandom);
+  setInputActive(state, true);
+  const center = { x: SPIN.x, y: SPIN.y };
+  const right = { x: SPIN.x + 86, y: SPIN.y };
+  const bottom = { x: SPIN.x, y: SPIN.y + 24 };
+  const left = { x: SPIN.x - 161, y: SPIN.y };
+  const top = { x: SPIN.x, y: SPIN.y - 32 };
+  const move = (a, b) => applyGesture(state, 'spin', spinDelta(a, b) / (Math.PI * 2));
+  move(right, bottom);
+  move(bottom, center);
+  move(center, bottom);
+  move(bottom, top);
+  assert.equal(state.spinTurnBuffer, 0.25);
+  move(bottom, left);
+  move(left, top);
+  assert.ok(move(top, right).some((event) => event.type === 'spin-turn'));
+  setInputActive(state, false);
+  assert.equal(state.spinTurnBuffer, 0);
 });
 
 test('V3 课堂：转笔和涂鸦会持续得分，松手后进入收好状态', () => {
