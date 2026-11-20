@@ -31,17 +31,37 @@ export const COMIC_STORIES = [
       { scene: 'dust', line: '班长：现在谁来擦你？' },
     ],
   },
+  {
+    id: 'homework-airmail', title: '自动交作业', color: '#e6b1a8',
+    pages: [
+      { scene: 'homework-call', line: '老师：作业交到讲台。' },
+      { scene: 'homework-fold', line: '同桌：试试我的自动投递。' },
+      { scene: 'homework-flight', line: '「嗖——」' },
+      { scene: 'homework-return', line: '老师：退件，名字没写。' },
+    ],
+  },
 ];
 
 export function createComicState(collected) {
+  const read = [];
+  const unread = [];
+  for (const [index, story] of COMIC_STORIES.entries()) {
+    const group = Array.isArray(collected) && collected.includes(story.id) ? read : unread;
+    group.push(index);
+  }
+  const [story, ...nextStories] = [...unread, ...read];
   return {
-    open: 0, story: 0, page: 0, endingTime: 0, finished: false, catches: 0, packing: 0,
-    collected: COMIC_STORIES.filter((story) => Array.isArray(collected) && collected.includes(story.id)).map((story) => story.id),
+    open: 0, story, nextStories, page: 0, endingTime: 0, finished: false, catches: 0, packing: 0,
+    collected: read.map((index) => COMIC_STORIES[index].id),
   };
 }
 
 export function comicEnding(comic) {
   return comic.page === COMIC_STORIES[comic.story].pages.length - 1;
+}
+
+export function canFlipComicForward(comic) {
+  return !comicEnding(comic) || (comic.finished && comic.nextStories.length > 0);
 }
 
 export function comicConfiscated(comic) {

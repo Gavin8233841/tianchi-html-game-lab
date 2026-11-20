@@ -1,6 +1,6 @@
 import { PLANE_FLIGHT, PLANE_FOLDS, SNACK, advanceHandheld, createHandheld, moveHandheld } from './desk-actions.js';
 import { CLASS_NOTES, createNoteState } from './classmate-notes.js';
-import { COMIC, COMIC_STORIES, comicConfiscated, comicEnding, createComicState } from './comics.js';
+import { COMIC, COMIC_STORIES, canFlipComicForward, comicConfiscated, comicEnding, createComicState } from './comics.js';
 
 export const LESSONS = Object.freeze([
   Object.freeze({
@@ -273,18 +273,20 @@ function playSnack(state, move, events) {
 function playComic(state, move, events) {
   const comic = state.comic;
   if (comicConfiscated(comic)) return;
-  if (move === 'next-page' || move === 'previous-page' || move === 'next-story') {
+  if (move === 'next-page' || move === 'previous-page') {
     if (comic.open < COMIC.openForPage) return;
-    if (move === 'next-story') {
-      if (!comic.finished || !comicEnding(comic) || comic.story >= COMIC_STORIES.length - 1) return;
-      comic.story += 1;
-      comic.page = 0;
-      comic.finished = false;
+    if (move === 'next-page') {
+      if (!canFlipComicForward(comic)) return;
+      if (comicEnding(comic)) {
+        comic.story = comic.nextStories.shift();
+        comic.page = 0;
+        comic.finished = false;
+      } else {
+        comic.page += 1;
+      }
     } else {
-      const direction = move === 'next-page' ? 1 : -1;
-      const page = clamp(comic.page + direction, 0, COMIC_STORIES[comic.story].pages.length - 1);
-      if (page === comic.page) return;
-      comic.page = page;
+      if (comic.page === 0) return;
+      comic.page -= 1;
     }
     comic.endingTime = 0;
     events.push({ type: 'comic-page' });

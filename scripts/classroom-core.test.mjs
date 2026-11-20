@@ -95,7 +95,7 @@ test('漫画：翻阅四格，半开看不到结尾；读完才计奖并保存',
   assert.equal(state.comic.page, 3);
   assert.equal(tick(state, 1).some((event) => event.type === 'comic-finished'), false);
   assert.equal(state.comic.finished, false);
-  assert.deepEqual(move('next-story'), []);
+  assert.deepEqual(move('next-page'), []);
   move(0.5);
   const completed = tick(state, 0.8);
   assert.equal(completed.find((event) => event.type === 'comic-finished').bonus, COMIC.bonus);
@@ -103,8 +103,31 @@ test('漫画：翻阅四格，半开看不到结尾；读完才计奖并保存',
   assert.ok(state.comic.collected.includes(COMIC_STORIES[0].id));
   assert.ok(state.memories.includes('desk-diver'));
   assert.equal(tick(state, 0.8).some((event) => event.type === 'comic-finished'), false);
-  assert.equal(move('next-story')[0].type, 'comic-page');
-  assert.deepEqual([state.comic.story, state.comic.page, state.comic.finished], [1, 0, false]);
+  assert.equal(move('next-page')[0].type, 'comic-page');
+  assert.deepEqual([state.comic.story, state.comic.page, state.comic.finished], [2, 0, false]);
+});
+
+test('漫画：四轮各四页无重复，读过三篇的存档先打开第四篇', () => {
+  assert.equal(COMIC_STORIES.length, 4);
+  assert.ok(COMIC_STORIES.every((story) => story.pages.length === 4));
+  assert.equal(new Set(COMIC_STORIES.flatMap((story) => story.pages.map((page) => page.scene))).size, 16);
+  const state = createGameState({ comics: COMIC_STORIES.slice(0, 3).map((story) => story.id) }, fixedRandom);
+  quietClassroom(state);
+  setActiveTool(state, 'comic');
+  const next = () => applyGesture(state, 'comic', 'next-page');
+  const seen = [];
+  applyGesture(state, 'comic', 1);
+  for (let round = 0; round < 4; round += 1) {
+    assert.equal(state.comic.page, 0);
+    seen.push(state.comic.story);
+    for (let page = 0; page < 3; page += 1) assert.equal(next()[0].type, 'comic-page');
+    assert.deepEqual(next(), []);
+    assert.ok(tick(state, 0.8).some((event) => event.type === 'comic-finished'));
+    if (round < 3) assert.equal(next()[0].type, 'comic-page');
+  }
+  assert.deepEqual(seen, [3, 0, 1, 2]);
+  assert.deepEqual(next(), []);
+  assert.equal(state.comic.collected.length, 4);
 });
 
 test('漫画：第一次被抓保存页码，第二次整局没收，第三节也不能再打开', () => {
