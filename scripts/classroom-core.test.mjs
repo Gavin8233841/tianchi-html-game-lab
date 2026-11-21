@@ -472,6 +472,25 @@ test('V3 课堂：跨局只保存回忆，不增加属性或升级数值', () =>
   assert.equal(nextRun.combo, 1);
   assert.equal(Object.hasOwn(nextRun, 'level'), false);
   assert.equal(MEMORIES.length, 10);
+  assert.deepEqual(createGameState({ memories: { invalid: true } }, fixedRandom).memories, []);
+});
+
+test('回忆：粉笔擦过时已收好道具才解锁贴纸', () => {
+  const focused = createGameState(fixedRandom);
+  const exposed = createGameState(fixedRandom);
+  for (const state of [focused, exposed]) {
+    state.nextEventTimer = 0;
+  }
+  setInputActive(exposed, true);
+  const chalkNear = () => {
+    const values = [0, 0.9, 0.5];
+    return () => values.shift() ?? 0.5;
+  };
+  const focusedEvents = updateGame(focused, 0.05, chalkNear());
+  assert.ok(focusedEvents.some((event) => event.type === 'chalk-near'));
+  assert.ok(focusedEvents.some((event) => event.type === 'memory' && event.memory.id === 'chalk-dodge'));
+  updateGame(exposed, 0.05, chalkNear());
+  assert.equal(exposed.memories.includes('chalk-dodge'), false);
 });
 
 test('V3 课堂：预警后收手可获得惊险分，持续暴露会被抓', () => {

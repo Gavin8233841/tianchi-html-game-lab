@@ -31,16 +31,16 @@ export const TOOLS = Object.freeze([
 ]);
 
 export const MEMORIES = Object.freeze([
-  Object.freeze({ id: 'pen-master', name: '笔仙附体', mark: '↻' }),
-  Object.freeze({ id: 'new-hero', name: '课本新角色', mark: '✎' }),
-  Object.freeze({ id: 'desk-diver', name: '桌洞探险家', mark: '▤' }),
-  Object.freeze({ id: 'paper-route', name: '纸条穿越全班', mark: '▱' }),
-  Object.freeze({ id: 'snack-time', name: '零食只剩包装', mark: '◒' }),
-  Object.freeze({ id: 'paper-legend', name: '纸飞机传说', mark: '➤' }),
-  Object.freeze({ id: 'last-level', name: '差一点通关', mark: '▣' }),
-  Object.freeze({ id: 'close-call', name: '眼皮底下', mark: '!' }),
-  Object.freeze({ id: 'roll-call', name: '点名时的沉默', mark: '？' }),
-  Object.freeze({ id: 'chalk-dodge', name: '粉笔擦肩而过', mark: '✦' }),
+  Object.freeze({ id: 'pen-master', name: '笔仙附体', mark: '↻', description: '一局转满四圈，笔居然没飞出去。' }),
+  Object.freeze({ id: 'new-hero', name: '课本新角色', mark: '✎', description: '在课本上画够了一幅涂鸦。' }),
+  Object.freeze({ id: 'desk-diver', name: '桌洞探险家', mark: '▤', description: '躲在桌洞里读完一篇四格漫画。' }),
+  Object.freeze({ id: 'paper-route', name: '纸条穿越全班', mark: '▱', description: '写了一张纸条，顺利传到同桌手里。' }),
+  Object.freeze({ id: 'snack-time', name: '零食只剩包装', mark: '◒', description: '一包辣条吃到只剩包装袋。' }),
+  Object.freeze({ id: 'paper-legend', name: '纸飞机传说', mark: '➤', description: '在教室里折好纸飞机，看它飞了出去。' }),
+  Object.freeze({ id: 'last-level', name: '差一点通关', mark: '▣', description: '在老师眼皮底下，掌机躲过了六个方块。' }),
+  Object.freeze({ id: 'close-call', name: '眼皮底下', mark: '!', description: '老师已经很怀疑你了，你赶在回头前收好了道具。' }),
+  Object.freeze({ id: 'roll-call', name: '点名时的沉默', mark: '？', description: '语文课突然点名，全班一下子安静了。' }),
+  Object.freeze({ id: 'chalk-dodge', name: '粉笔擦肩而过', mark: '✦', description: '道具已经收好，粉笔头刚好从旁边擦过去。' }),
 ]);
 
 export const WATCHER_TYPES = Object.freeze([
@@ -68,7 +68,8 @@ const toolById = (id) => TOOLS.find((tool) => tool.id === id) || TOOLS[0];
 const watcherType = (key) => WATCHER_TYPES.find((watcher) => watcher.key === key);
 
 function normalizeMemories(memories) {
-  return [...new Set((memories || []).filter((id) => MEMORIES.some((memory) => memory.id === id)))];
+  if (!Array.isArray(memories)) return [];
+  return [...new Set(memories.filter((id) => MEMORIES.some((memory) => memory.id === id)))];
 }
 
 function unlockMemory(state, id, events) {
@@ -439,9 +440,13 @@ function triggerClassEvent(state, random, events) {
   state.classEventTimer = 1.8;
   events.push({ type: 'class-event', event });
   if (event.id === 'chalk') {
-    if (isExposed(state)) state.suspicion += 13;
+    const exposed = isExposed(state);
+    if (exposed) state.suspicion += 13;
     else state.score += 25;
-    if (random() > 0.45) events.push({ type: 'chalk-near' });
+    if (random() > 0.45) {
+      events.push({ type: 'chalk-near' });
+      if (!exposed) unlockMemory(state, 'chalk-dodge', events);
+    }
   } else if (event.id === 'question' || event.id === 'roll-call') {
     if (isExposed(state)) state.suspicion += event.id === 'question' ? 22 : 17;
     else state.score += event.id === 'question' ? 45 : 32;

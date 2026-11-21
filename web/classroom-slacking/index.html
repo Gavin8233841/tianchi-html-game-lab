@@ -61,10 +61,20 @@
           <p class='eyebrow'>初中 · 课堂生存</p>
           <h1>课桌下的宇宙</h1>
           <p class='tagline'>老师转身以后，一节课可以很长。</p>
-          <button id='start-button' class='primary-button' type='button'>开始上课</button>
+          <div class='menu-actions'>
+            <button id='start-button' class='primary-button' type='button'>开始上课</button>
+            <button class='secondary-button' type='button' data-open-album>回忆册</button>
+          </div>
           <p id='best-score' class='best-score'></p>
         </div>
       </section>
+      <dialog id='memory-album' class='memory-album' aria-labelledby='album-title'>
+        <div class='album-header'>
+          <h2 id='album-title'>课桌回忆册</h2>
+          <form method='dialog'><button type='submit' class='album-close' aria-label='关闭回忆册'>×</button></form>
+        </div>
+        <div id='album-content'></div>
+      </dialog>
     </main>
     <script type='module' src='game.js'></script>
   </body>

@@ -16,8 +16,8 @@ import {
   updateGame,
 } from './core.js';
 import { drawShareCard, renderClassroom, toLogicalPoint } from './art.js';
-import { drawComicPage } from './comic-art.js';
-import { COMIC, COMIC_STORIES, canFlipComicForward, comicConfiscated, comicEnding } from './comics.js';
+import { COMIC, canFlipComicForward, comicConfiscated, comicEnding } from './comics.js';
+import { createMemoryAlbum, newAlbumCards, paintAlbumCovers } from './memory-album.js';
 import { HANDHELD, NOTE, PAPER, PLANE_FLIGHT, PLANE_FOLDS, SNACK, canStartSpin, spinDelta } from './desk-actions.js';
 
 const shell = document.getElementById('game-shell');
@@ -46,6 +46,7 @@ const undoButton = document.getElementById('doodle-undo');
 const clearButton = document.getElementById('doodle-clear');
 const farButton = planeActions.querySelector('[data-throw="far"]');
 const screen = document.getElementById('screen');
+const openAlbum = createMemoryAlbum(document.getElementById('memory-album'));
 const toolDock = document.getElementById('tool-dock');
 const handheldButton = toolDock.querySelector('[data-tool="console"]');
 const handheldLabel = handheldButton.querySelector('span');
@@ -82,23 +83,23 @@ let corridorPresence = 0;
 let monitorTurn = 0;
 let muted = false;
 let best = loadBest();
-let readerStory = null;
-let readerPage = 0;
+let initialCollectionCounts;
 
 function loadBest() {
   try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch { return 0; }
 }
 
-function loadMemories() {
-  try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || '[]'); } catch { return []; }
+function loadCollection(key) {
+  try {
+    const items = JSON.parse(localStorage.getItem(key));
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
 }
 
 function saveMemories(memories) {
   try { localStorage.setItem(MEMORY_KEY, JSON.stringify(memories)); } catch { /* Optional local collection. */ }
-}
-
-function loadComics() {
-  try { return JSON.parse(localStorage.getItem(COMICS_KEY) || '[]'); } catch { return []; }
 }
 
 function saveComics() {
@@ -229,66 +230,30 @@ function showIntermission() {
 }
 
 function showEndScreen(won) {
+  audio.stopSpeech();
   const score = Math.floor(state.score);
   saveBest(score);
   saveMemories(state.memories);
   saveComics();
   bannerTimer = 0;
   bannerEl.textContent = '';
+  hud.classList.add('is-hidden');
   screen.classList.remove('is-hidden');
-  const memoryDots = MEMORIES.map((memory) => state.memories.includes(memory.id)
-    ? `<i class='memory-dot' title='${memory.name}'>${memory.mark}</i>` : '').join('');
+  const newCards = newAlbumCards(state.memories, state.comic.collected, initialCollectionCounts);
   screen.innerHTML = `
-    <div class='screen-copy'>
+    <div class='screen-copy results-copy'>
       <p class='eyebrow'>${won ? '放学铃响了' : '纪律记录已满'}</p>
       <h1>${won ? '平安熬到放学' : '被请去办公室'}</h1>
-      <p class='score-line'>${score.toLocaleString('zh-CN')}</p>
-      <p class='tagline'>${scoreRank(score)} · 被抓 ${state.strikes} 次<br>回忆已收集 ${state.memories.length} / ${MEMORIES.length}</p>
-      <div class='memory-strip'>${memoryDots || '<i class="memory-dot">?</i>'}</div>
-      <div class='end-actions'>
-        ${state.comic.collected.length ? '<button id="comic-library" class="secondary-button" type="button">重看漫画</button>' : ''}
-        <button id='download-card' class='secondary-button' type='button'>保存成绩单</button>
+      <p class='score-line'><span>脑洞值</span> ${score.toLocaleString('zh-CN')}</p>
+      <p class='tagline'>${scoreRank(score)} · 被抓 ${state.strikes} 次</p>
+      ${newCards ? `<div class='new-memories'><h2>本局新回忆</h2><div>${newCards}</div></div>` : ''}
+      <div class='menu-actions'>
         <button id='restart-button' class='primary-button' type='button'>再来一天</button>
+        <button class='secondary-button' type='button' data-open-album>回忆册</button>
       </div>
-      <p class='best-score'>本机最高 ${best.toLocaleString('zh-CN')}</p>
+      <button id='download-card' class='share-result' type='button'>保存成绩单</button>
     </div>`;
-}
-
-function showComicLibrary() {
-  const stories = COMIC_STORIES.filter((story) => state.comic.collected.includes(story.id));
-  screen.innerHTML = `
-    <div class='screen-copy comic-reader'>
-      <h1>桌洞漫画</h1>
-      <div class='comic-reader-actions'>
-        ${stories.map((story) => `<button class='secondary-button' type='button' data-comic-story='${story.id}'>${story.title}</button>`).join('')}
-        <button id='comic-results' class='secondary-button' type='button'>返回结算</button>
-      </div>
-    </div>`;
-  screen.querySelector('button')?.focus();
-}
-
-function showComicReader() {
-  screen.innerHTML = `
-    <div class='screen-copy comic-reader'>
-      <canvas id='comic-canvas' width='${COMIC.width * 2}' height='${COMIC.height * 2}' role='img'></canvas>
-      <div class='comic-reader-actions'>
-        <button class='secondary-button' type='button' data-reader-turn='-1'>上一格</button>
-        <button class='secondary-button' type='button' data-reader-turn='1'>下一格</button>
-        <button id='comic-library' class='secondary-button' type='button'>返回漫画</button>
-      </div>
-    </div>`;
-  refreshComicReader();
-  screen.querySelector('[data-reader-turn="1"]').focus();
-}
-
-function refreshComicReader() {
-  const readerCanvas = screen.querySelector('#comic-canvas');
-  const context = readerCanvas.getContext('2d');
-  drawComicPage(context, readerStory, readerPage, 0, 0, 2);
-  const page = readerStory.pages[readerPage];
-  readerCanvas.setAttribute('aria-label', `${readerStory.title} 第 ${readerPage + 1} 格，${page.line}`);
-  screen.querySelector('[data-reader-turn="-1"]').disabled = readerPage === 0;
-  screen.querySelector('[data-reader-turn="1"]').disabled = readerPage === readerStory.pages.length - 1;
+  paintAlbumCovers(screen);
 }
 
 function hideScreen() {
@@ -345,8 +310,8 @@ function processEvents(events) {
 
 function startGame() {
   audio.unlock();
-  state = createGameState({ memories: loadMemories(), comics: loadComics() });
-  readerStory = null;
+  state = createGameState({ memories: loadCollection(MEMORY_KEY), comics: loadCollection(COMICS_KEY) });
+  initialCollectionCounts = { stickers: state.memories.length, comics: state.comic.collected.length };
   resetPointer();
   doodleStrokes = [];
   spinAngle = 0;
@@ -405,19 +370,12 @@ screen.addEventListener('click', (event) => {
   if (event.target.closest('#continue-button')) { continueLesson(); return; }
   if (event.target.closest('#restart-button')) { startGame(); return; }
   if (event.target.closest('#download-card')) downloadShareCard();
-  if (event.target.closest('#comic-library')) { showComicLibrary(); return; }
-  if (event.target.closest('#comic-results')) { showEndScreen(state.phase === 'won'); return; }
-  const selection = event.target.closest('[data-comic-story]')?.dataset.comicStory;
-  if (selection && state.comic.collected.includes(selection)) {
-    readerStory = COMIC_STORIES.find((story) => story.id === selection);
-    readerPage = 0;
-    showComicReader();
-    return;
-  }
-  const turn = event.target.closest('[data-reader-turn]');
-  if (turn && readerStory) {
-    readerPage = Math.max(0, Math.min(readerStory.pages.length - 1, readerPage + Number(turn.dataset.readerTurn)));
-    refreshComicReader();
+  const albumButton = event.target.closest('[data-open-album]');
+  if (albumButton) {
+    openAlbum(albumButton, {
+      stickers: state?.memories ?? loadCollection(MEMORY_KEY),
+      comics: state?.comic.collected ?? loadCollection(COMICS_KEY),
+    });
   }
 });
 document.getElementById('start-button').addEventListener('click', startGame);
@@ -710,7 +668,7 @@ function createAudio() {
   }
   function speak(text) {
     if (isMuted || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+    stopSpeech();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'zh-CN';
     utterance.rate = 0.92;
@@ -718,9 +676,13 @@ function createAudio() {
     utterance.volume = 0.72;
     window.speechSynthesis.speak(utterance);
   }
+  function stopSpeech() {
+    window.speechSynthesis?.cancel();
+  }
   return {
     unlock,
-    setMuted(value) { isMuted = value; if (isMuted && 'speechSynthesis' in window) window.speechSynthesis.cancel(); },
+    stopSpeech,
+    setMuted(value) { isMuted = value; if (isMuted) stopSpeech(); },
     tap(frequency) { tone(frequency, 0.045, 'triangle', 0, frequency * 1.15); },
     warning(kind) { const base = kind === 'teacher' ? 620 : kind === 'corridor' ? 460 : 760; tone(base, 0.1, 'square'); tone(base * 1.18, 0.1, 'square', 0.12); },
     fake() { tone(420, 0.08, 'triangle', 0, 260); },
